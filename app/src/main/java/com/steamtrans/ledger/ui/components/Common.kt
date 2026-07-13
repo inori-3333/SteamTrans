@@ -12,22 +12,37 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Diamond
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.LocalMall
+import androidx.compose.material.icons.outlined.Redeem
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
+import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.Style
+import androidx.compose.material.icons.outlined.ViewCarousel
+import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.steamtrans.ledger.data.ItemEntity
+import com.steamtrans.ledger.data.ItemType
 import com.steamtrans.ledger.formatMoney
 import com.steamtrans.ledger.ui.theme.RaisedBlue
 import com.steamtrans.ledger.ui.theme.TextSecondary
@@ -98,25 +113,47 @@ fun StatusPill(text: String, color: Color, icon: ImageVector? = null) {
 
 @Composable
 fun ItemArtwork(item: ItemEntity, modifier: Modifier = Modifier) {
+    val color = categoryColor(item.type)
     Box(
-        modifier.background(categoryColor(item.type).copy(alpha = 0.16f), RoundedCornerShape(12.dp)),
+        modifier.background(color.copy(alpha = 0.16f), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
+        Icon(
+            defaultArtworkIcon(item.type),
+            item.type.label,
+            tint = color,
+            modifier = Modifier.size(25.dp)
+        )
         if (!item.imageUrl.isNullOrBlank()) {
             AsyncImage(
-                model = item.imageUrl,
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(item.imageUrl)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .networkCachePolicy(CachePolicy.ENABLED)
+                    .crossfade(180)
+                    .build(),
                 contentDescription = item.name,
-                modifier = Modifier.matchParentSize().padding(5.dp)
-            )
-        } else {
-            Icon(
-                if (item.type.name.contains("CASE")) Icons.Outlined.Inventory2 else Icons.Outlined.Category,
-                item.type.label,
-                tint = categoryColor(item.type),
-                modifier = Modifier.size(25.dp)
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.matchParentSize().padding(4.dp)
             )
         }
     }
+}
+
+internal fun defaultArtworkIcon(type: ItemType): ImageVector = when (type) {
+    ItemType.SKIN -> Icons.Outlined.SportsEsports
+    ItemType.CASE_CONTAINER -> Icons.Outlined.Inventory2
+    ItemType.CAPSULE -> Icons.Outlined.Science
+    ItemType.SOUVENIR_PACKAGE -> Icons.Outlined.Redeem
+    ItemType.GEM_SACK -> Icons.Outlined.LocalMall
+    ItemType.GEM -> Icons.Outlined.Diamond
+    ItemType.CARD -> Icons.Outlined.Style
+    ItemType.FOIL_CARD -> Icons.Outlined.AutoAwesome
+    ItemType.BOOSTER -> Icons.Outlined.ViewCarousel
+    ItemType.BACKGROUND -> Icons.Outlined.Wallpaper
+    ItemType.EMOTICON -> Icons.Outlined.SentimentSatisfiedAlt
+    ItemType.OTHER -> Icons.Outlined.Category
 }
 
 @Composable
