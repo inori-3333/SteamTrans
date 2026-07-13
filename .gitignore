@@ -1,0 +1,17 @@
+# Gradle and Kotlin build state
+.gradle/
+.kotlin/
+**/build/
+
+# Android Studio and local SDK configuration
+.idea/
+*.iml
+local.properties
+
+# Native build output and captures
+.cxx/
+captures/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
