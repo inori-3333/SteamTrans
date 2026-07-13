@@ -136,9 +136,9 @@ fun HoldingsScreen(
             (bindingFilter == null || !row.item.marketHashName.isNullOrBlank() == bindingFilter)
     }.let { filtered ->
         when (sort) {
-            HoldingSort.VALUE -> filtered.sortedWith(compareByDescending<HoldingRow> { it.holding?.marketNetValueCents ?: -1 }.thenByDescending { it.holding?.costCents ?: 0 })
-            HoldingSort.COST -> filtered.sortedByDescending { it.holding?.costCents ?: 0 }
-            HoldingSort.QUANTITY -> filtered.sortedByDescending { it.holding?.quantity ?: 0 }
+            HoldingSort.VALUE -> filtered.sortedWith(compareByDescending<HoldingRow> { it.holding?.marketNetValueCents ?: -1L }.thenByDescending { it.holding?.costCents ?: 0L })
+            HoldingSort.COST -> filtered.sortedByDescending { it.holding?.costCents ?: 0L }
+            HoldingSort.QUANTITY -> filtered.sortedByDescending { it.holding?.quantity ?: 0L }
             HoldingSort.NAME -> filtered.sortedBy { it.item.name }
         }
     }
@@ -317,7 +317,7 @@ private fun HoldingCard(
                                 if (stale) StatusPill("已过期", Stale, Icons.Outlined.History)
                             }
                             if (holding.cost.fiatCents == 0L) {
-                                val pnl = (holding.marketNetValueCents ?: 0) - holding.cost.walletCents
+                                val pnl = (holding.marketNetValueCents ?: 0L) - holding.cost.walletCents
                                 Spacer(Modifier.height(8.dp))
                                 Text("可比较未实现盈亏 ${formatMoney(pnl, true)}", color = if (pnl >= 0) Gain else Loss, style = MaterialTheme.typography.titleMedium)
                             } else {

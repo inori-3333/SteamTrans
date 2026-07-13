@@ -47,7 +47,7 @@ class LedgerComposeTest {
     }
 
     @Test
-    fun holdingsRendersAnItemAfterMarketBindingAndQuoteUpdate() {
+    fun holdingsSortsPricedAndUnpricedItemsAfterQuoteUpdate() {
         val item = ItemEntity(
             id = 1,
             name = "Dreams & Nightmares Case",
@@ -65,12 +65,21 @@ class LedgerComposeTest {
             source = PriceSource.STEAM_MARKET,
             timestamp = System.currentTimeMillis()
         )
+        val unpricedItem = ItemEntity(
+            id = 2,
+            name = "Unpriced Item",
+            game = "CS2",
+            type = ItemType.CASE_CONTAINER
+        )
         composeRule.setContent {
             SteamLedgerTheme {
                 HoldingsScreen(
-                    allItems = listOf(item),
+                    allItems = listOf(item, unpricedItem),
                     snapshot = LedgerSnapshot(
-                        holdings = listOf(Holding(item, quantity = 1, cost = CostVector(walletCents = 100), quote = quote)),
+                        holdings = listOf(
+                            Holding(item, quantity = 1, cost = CostVector(walletCents = 100), quote = quote),
+                            Holding(unpricedItem, quantity = 1, cost = CostVector(walletCents = 300))
+                        ),
                         marketGrossValueCents = 250,
                         marketNetValueCents = 212
                     ),
@@ -88,6 +97,7 @@ class LedgerComposeTest {
         }
 
         composeRule.onNodeWithText("Dreams & Nightmares Case").assertExists().performClick()
+        composeRule.onNodeWithText("Unpriced Item").assertExists()
         composeRule.onNodeWithText("单件挂牌").assertExists()
         composeRule.waitForIdle()
     }
