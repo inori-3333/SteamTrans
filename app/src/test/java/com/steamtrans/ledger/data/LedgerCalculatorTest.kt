@@ -111,5 +111,41 @@ class LedgerCalculatorTest {
         assertEquals(2L, breakEvenPrice(Long.MAX_VALUE, Long.MAX_VALUE))
     }
 
+    @Test fun `gem holding divides sack quote by one thousand`() {
+        val quote = MarketQuoteEntity(
+            itemId = gems.id,
+            grossPriceCents = 300,
+            estimatedNetPriceCents = 255,
+            source = PriceSource.STEAM_MARKET,
+            timestamp = 1
+        )
+        val result = LedgerCalculator.calculate(
+            listOf(gems),
+            listOf(event(1, EventType.BUY, EventLineEntity(1, 1, gems.id, LineDirection.IN, 2_000, 1))),
+            mapOf(gems.id to quote)
+        )
+
+        assertEquals(600L, result.marketGrossValueCents)
+        assertEquals(510L, result.marketNetValueCents)
+    }
+
+    @Test fun `non gem holding keeps per item quote`() {
+        val quote = MarketQuoteEntity(
+            itemId = gemBag.id,
+            grossPriceCents = 300,
+            estimatedNetPriceCents = 255,
+            source = PriceSource.STEAM_MARKET,
+            timestamp = 1
+        )
+        val result = LedgerCalculator.calculate(
+            listOf(gemBag),
+            listOf(event(1, EventType.BUY, EventLineEntity(1, 1, gemBag.id, LineDirection.IN, 2, 100))),
+            mapOf(gemBag.id to quote)
+        )
+
+        assertEquals(600L, result.marketGrossValueCents)
+        assertEquals(510L, result.marketNetValueCents)
+    }
+
     private fun event(id: Long, type: EventType, line: EventLineEntity) = EventView(LedgerEventEntity(id, type, id), listOf(line))
 }

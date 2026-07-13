@@ -241,8 +241,16 @@ data class Holding(
     val costCents: Long get() = cost.totalCents
     val averageCostCents: Long get() = if (quantity == 0L) 0 else costCents / quantity
     val breakEvenPriceCents: Long get() = breakEvenPrice(costCents, quantity)
-    val marketGrossValueCents: Long? get() = quote?.let { Math.multiplyExact(it.grossPriceCents, quantity) }
-    val marketNetValueCents: Long? get() = quote?.let { Math.multiplyExact(it.estimatedNetPriceCents, quantity) }
+    val marketGrossValueCents: Long? get() = quote?.let { marketValueCents(it.grossPriceCents) }
+    val marketNetValueCents: Long? get() = quote?.let { marketValueCents(it.estimatedNetPriceCents) }
+
+    private fun marketValueCents(quotePriceCents: Long): Long {
+        val quotedQuantity = if (item.type == ItemType.GEM) 1_000L else 1L
+        return BigInteger.valueOf(quotePriceCents)
+            .multiply(BigInteger.valueOf(quantity))
+            .divide(BigInteger.valueOf(quotedQuantity))
+            .longValueExact()
+    }
 }
 
 fun breakEvenPrice(totalCostCents: Long, quantity: Long): Long {

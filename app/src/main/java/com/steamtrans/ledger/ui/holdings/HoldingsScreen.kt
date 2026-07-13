@@ -308,8 +308,8 @@ private fun HoldingCard(
                         Spacer(Modifier.height(13.dp))
                         if (holding.quote != null) {
                             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                CostColumn("单件挂牌", holding.quote.grossPriceCents, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
-                                CostColumn("单件预计到手", holding.quote.estimatedNetPriceCents, Gain, Modifier.weight(1f))
+                                QuoteColumn("单件挂牌", item, holding.quote.grossPriceCents, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
+                                QuoteColumn("单件预计到手", item, holding.quote.estimatedNetPriceCents, Gain, Modifier.weight(1f))
                             }
                             Spacer(Modifier.height(8.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -333,9 +333,9 @@ private fun HoldingCard(
                             quoteHistory.forEach { quote ->
                                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(formatDateTime(quote.timestamp), style = MaterialTheme.typography.bodySmall, color = TextSecondary, modifier = Modifier.weight(1f))
-                                    Text("挂牌 ${formatMoney(quote.grossPriceCents)}", style = MaterialTheme.typography.bodySmall)
+                                    Text("挂牌 ${formatQuoteUnitPrice(item, quote.grossPriceCents)}", style = MaterialTheme.typography.bodySmall)
                                     Spacer(Modifier.width(9.dp))
-                                    Text("到手 ${formatMoney(quote.estimatedNetPriceCents)}", style = MaterialTheme.typography.bodySmall, color = Gain)
+                                    Text("到手 ${formatQuoteUnitPrice(item, quote.estimatedNetPriceCents)}", style = MaterialTheme.typography.bodySmall, color = Gain)
                                 }
                             }
                         }
@@ -379,6 +379,17 @@ private fun CostColumn(label: String, cents: Long, color: Color, modifier: Modif
         Text(formatMoney(cents), style = MaterialTheme.typography.titleMedium, color = color)
     }
 }
+
+@Composable
+private fun QuoteColumn(label: String, item: ItemEntity, cents: Long, color: Color, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        Text(formatQuoteUnitPrice(item, cents), style = MaterialTheme.typography.titleMedium, color = color)
+    }
+}
+
+private fun formatQuoteUnitPrice(item: ItemEntity, cents: Long): String =
+    if (item.type == ItemType.GEM) "¥${BigDecimal.valueOf(cents, 5).toPlainString()}" else formatMoney(cents)
 
 @Composable
 private fun MarketBindingDialog(
@@ -438,9 +449,14 @@ private fun ManualQuoteDialog(item: ItemEntity, onDismiss: () -> Unit, onSave: (
         title = { Text("${item.name} · 手动行情") },
         text = {
             Column {
-                Text("填写 Steam 市场单件挂牌价；预计到手价按 Steam 平台档案计算。", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (item.type == ItemType.GEM) "填写 1000 颗宝石（一袋宝石）的挂牌价；持仓估值会自动按每颗 1/1000 计算。"
+                    else "填写 Steam 市场单件挂牌价；预计到手价按 Steam 平台档案计算。",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(amount, { amount = it }, label = { Text("单件挂牌价") }, prefix = { Text("¥") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, isError = amount.isNotBlank() && (parsed == null || parsed <= 0))
+                OutlinedTextField(amount, { amount = it }, label = { Text(if (item.type == ItemType.GEM) "每 1000 颗挂牌价" else "单件挂牌价") }, prefix = { Text("¥") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, isError = amount.isNotBlank() && (parsed == null || parsed <= 0))
             }
         },
         confirmButton = { Button(onClick = { parsed?.let(onSave) }, enabled = parsed != null && parsed > 0) { Text("保存") } },
