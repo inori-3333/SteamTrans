@@ -6,9 +6,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -52,7 +58,12 @@ class CommunityMarketGateway(
         val url = buildSearchUrl(query, appId)
         val root = getJson(url.toString())
         require(root["success"]?.jsonPrimitive?.booleanOrNull != false) { "Steam 市场搜索暂不可用" }
-        parseSearchHtml(root["results_html"]?.jsonPrimitive?.content.orEmpty(), appId)
+        val results = parseSearchResults(root, appId).ifEmpty {
+            parseSearchHtml(root["results_html"]?.jsonPrimitive?.content.orEmpty(), appId)
+        }
+        val totalCount = root["total_count"]?.jsonPrimitive?.longOrNull ?: 0L
+        require(results.isNotEmpty() || totalCount == 0L) { "Steam 返回了搜索结果，但应用暂时无法解析" }
+        results
     }
 
     override suspend fun quote(appId: Int, marketHashName: String): SteamMarketQuote = withContext(Dispatchers.IO) {
@@ -113,6 +124,8 @@ class CommunityMarketGateway(
     private fun decodeHtml(value: String): String = Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString()
 
     companion object {
+        private const val ImageBaseUrl = "https://community.fastly.steamstatic.com/economy/image"
+
         fun buildSearchUrl(query: String, appId: Int?): HttpUrl {
             val builder = "https://steamcommunity.com/market/search/render/".toHttpUrl().newBuilder()
                 .addQueryParameter("query", query.trim())
@@ -125,6 +138,45 @@ class CommunityMarketGateway(
             appId?.let { builder.addQueryParameter("appid", it.toString()) }
             return builder.build()
         }
+
+        fun parseSearchResults(root: JsonObject, fallbackAppId: Int?): List<SteamMarketSearchResult> {
+            val results = root["results"] as? JsonArray ?: return emptyList()
+            return results.mapNotNull { element ->
+                val result = element as? JsonObject ?: return@mapNotNull null
+                val asset = result["asset_description"] as? JsonObject
+                val appId = asset?.intValue("appid") ?: fallbackAppId ?: return@mapNotNull null
+                val hashName = asset?.stringValue("market_hash_name")
+                    ?: result.stringValue("hash_name")
+                    ?: return@mapNotNull null
+                val displayName = result.stringValue("name")
+                    ?: asset?.stringValue("market_name")
+                    ?: hashName
+                val iconUrl = asset?.stringValue("icon_url")?.takeIf { it.isNotBlank() }
+                SteamMarketSearchResult(
+                    appId = appId,
+                    marketHashName = hashName,
+                    displayName = displayName,
+                    imageUrl = iconUrl?.let {
+                        if (it.startsWith("http://") || it.startsWith("https://")) it
+                        else "$ImageBaseUrl/$it/96fx96f"
+                    },
+                    listingUrl = "https://steamcommunity.com".toHttpUrl().newBuilder()
+                        .addPathSegment("market")
+                        .addPathSegment("listings")
+                        .addPathSegment(appId.toString())
+                        .addPathSegment(hashName)
+                        .build()
+                        .toString(),
+                    gameName = result.stringValue("app_name").orEmpty()
+                )
+            }.distinctBy { it.appId to it.marketHashName }.take(20)
+        }
+
+        private fun JsonObject.stringValue(key: String): String? =
+            (this[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+
+        private fun JsonObject.intValue(key: String): Int? =
+            (this[key] as? JsonPrimitive)?.intOrNull
 
         fun parseCnyPrice(value: String): Long? = runCatching {
             val cleaned = value.replace("¥", "").replace("￥", "").replace("CNY", "", true)
