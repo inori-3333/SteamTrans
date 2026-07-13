@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -339,7 +340,7 @@ private fun AddRecordSheet(
 
             if (type == EventType.BUY) {
                 Text("买入物品", fontWeight = FontWeight.SemiBold)
-                NewItemFields(newType, { newType = it }, newName, { newName = it }, newGame, { newGame = it })
+                NewItemFields(newType, { newType = it }, newName, { newName = it }, newGame, { newGame = it }, items)
                 Text("若该物品已存在，本次交易会自动合并到原持仓", color = Muted, fontSize = 12.sp)
             } else {
                 if (ownedItems.isEmpty()) Text("当前没有可${if (type == EventType.SELL) "卖出" else "转换"}的持仓", color = Loss)
@@ -358,7 +359,7 @@ private fun AddRecordSheet(
                         NumberField("产出数量", outputQuantity, { outputQuantity = it }, Modifier.weight(1f))
                     }
                     Text("产出物品", fontWeight = FontWeight.SemiBold)
-                    NewItemFields(outputType, { outputType = it }, outputName, { outputName = it }, outputGame, { outputGame = it })
+                    NewItemFields(outputType, { outputType = it }, outputName, { outputName = it }, outputGame, { outputGame = it }, items)
                     Text("若产出物已存在，会自动加入原持仓", color = Muted, fontSize = 12.sp)
                     val holdingCost = snapshot.holdings.firstOrNull { it.item.id == first?.id }?.costCents ?: 0
                     Text("本次转移成本：${money(if (available > 0 && q <= available) proportionalCost(holdingCost, q, available) else 0)}", color = SteamBlue, fontSize = 13.sp)
@@ -413,18 +414,126 @@ private fun AddRecordSheet(
 private fun NewItemFields(
     type: ItemType, setType: (ItemType) -> Unit,
     name: String, setName: (String) -> Unit,
-    game: String, setGame: (String) -> Unit
+    game: String, setGame: (String) -> Unit,
+    history: List<ItemEntity>
 ) {
     ItemTypePicker(type, setType)
     val fixed = type == ItemType.GEM || type == ItemType.GEM_SACK
     if (!fixed) {
-        OutlinedTextField(game, setGame, label = { Text(if (type == ItemType.BOOSTER) "所属游戏（必填）" else "所属游戏（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        HistoryAutocompleteField(
+            value = game,
+            setValue = setGame,
+            label = if (type == ItemType.BOOSTER) "所属游戏（必填）" else "所属游戏（可选）",
+            suggestions = gameSuggestions(game, history)
+        )
     }
     if (!fixed && type != ItemType.BOOSTER) {
-        OutlinedTextField(name, setName, label = { Text("物品名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        ItemNameAutocompleteField(
+            value = name,
+            setValue = setName,
+            game = game,
+            setGame = setGame,
+            suggestions = itemNameSuggestions(name, history, type, game)
+        )
     }
     if (fixed) Text("名称将自动设为“${if (type == ItemType.GEM) "宝石" else "宝石袋"}”", color = Muted, fontSize = 12.sp)
     if (type == ItemType.BOOSTER && game.isNotBlank()) Text("名称将自动设为“${game.trim()} 卡包”", color = Muted, fontSize = 12.sp)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistoryAutocompleteField(
+    value: String,
+    setValue: (String) -> Unit,
+    label: String,
+    suggestions: List<String>
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded && suggestions.isNotEmpty(),
+        onExpandedChange = { expanded = it && suggestions.isNotEmpty() }
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {
+                setValue(it)
+                expanded = true
+            },
+            label = { Text(label) },
+            singleLine = true,
+            trailingIcon = {
+                if (suggestions.isNotEmpty()) ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focus -> expanded = focus.isFocused && suggestions.isNotEmpty() }
+                .menuAnchor(MenuAnchorType.PrimaryEditable)
+        )
+        ExposedDropdownMenu(expanded = expanded && suggestions.isNotEmpty(), onDismissRequest = { expanded = false }) {
+            suggestions.forEach { suggestion ->
+                HistorySuggestionItem(suggestion) {
+                    setValue(suggestion)
+                    expanded = false
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ItemNameAutocompleteField(
+    value: String,
+    setValue: (String) -> Unit,
+    game: String,
+    setGame: (String) -> Unit,
+    suggestions: List<ItemEntity>
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded && suggestions.isNotEmpty(),
+        onExpandedChange = { expanded = it && suggestions.isNotEmpty() }
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {
+                setValue(it)
+                expanded = true
+            },
+            label = { Text("物品名称") },
+            singleLine = true,
+            trailingIcon = {
+                if (suggestions.isNotEmpty()) ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focus -> expanded = focus.isFocused && suggestions.isNotEmpty() }
+                .menuAnchor(MenuAnchorType.PrimaryEditable)
+        )
+        ExposedDropdownMenu(expanded = expanded && suggestions.isNotEmpty(), onDismissRequest = { expanded = false }) {
+            suggestions.forEach { item ->
+                HistorySuggestionItem(item.name, item.game) {
+                    setValue(item.name)
+                    if (game.isBlank() && item.game.isNotBlank()) setGame(item.game)
+                    expanded = false
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistorySuggestionItem(value: String, detail: String = "", select: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(detail.ifBlank { "历史输入" }, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        },
+        leadingIcon = { Icon(Icons.Default.History, null, tint = SteamBlue) },
+        onClick = select
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
