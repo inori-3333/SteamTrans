@@ -191,7 +191,7 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     fun clearAll(done: () -> Unit = {}) = launchOperation("清空失败", done) { repository.clearAll() }
     fun clearMarketData(done: () -> Unit = {}) = launchOperation("清空行情失败", done) { repository.clearMarketData() }
 
-    fun searchMarket(query: String, appId: Int) {
+    fun searchMarket(query: String, appId: Int?) {
         if (_marketSearch.value.running) return
         viewModelScope.launch {
             _marketSearch.value = MarketSearchState(running = true, query = query)

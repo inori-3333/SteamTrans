@@ -8,6 +8,16 @@ import org.junit.Test
 
 class SteamMarketGatewayTest {
     @Test
+    fun marketSearchCanOmitGameFilter() {
+        val allGames = CommunityMarketGateway.buildSearchUrl("Booster Pack", null)
+        val cs2Only = CommunityMarketGateway.buildSearchUrl("Case", 730)
+
+        assertEquals("Booster Pack", allGames.queryParameter("query"))
+        assertNull(allGames.queryParameter("appid"))
+        assertEquals("730", cs2Only.queryParameter("appid"))
+    }
+
+    @Test
     fun parsesChineseCnyPriceWithoutFabricatingMissingValues() {
         assertEquals(123456L, CommunityMarketGateway.parseCnyPrice("¥ 1,234.56"))
         assertEquals(980L, CommunityMarketGateway.parseCnyPrice("CNY 9.8"))

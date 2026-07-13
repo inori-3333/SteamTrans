@@ -105,7 +105,7 @@ fun HoldingsScreen(
     refreshState: MarketRefreshState,
     searchState: MarketSearchState,
     onRefresh: () -> Unit,
-    onSearchMarket: (String, Int) -> Unit,
+    onSearchMarket: (String, Int?) -> Unit,
     onClearSearch: () -> Unit,
     onBindMarket: (Long, SteamMarketSearchResult) -> Unit,
     onUnbindMarket: (Long) -> Unit,
@@ -384,20 +384,21 @@ private fun CostColumn(label: String, cents: Long, color: Color, modifier: Modif
 private fun MarketBindingDialog(
     item: ItemEntity,
     searchState: MarketSearchState,
-    onSearch: (String, Int) -> Unit,
+    onSearch: (String, Int?) -> Unit,
     onSelect: (SteamMarketSearchResult) -> Unit,
     onDismiss: () -> Unit
 ) {
     var query by remember(item.id) { mutableStateOf(item.name) }
-    var appId by remember(item.id) { mutableStateOf(if (item.game.contains("DOTA", true)) 570 else 730) }
+    var appId by remember(item.id) { mutableStateOf<Int?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("绑定 Steam 市场") },
         text = {
             Column {
-                Text("仅在点击搜索时联网。选择结果后会保存市场名称和图片。", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Text("默认搜索全部游戏；选择结果后会保存对应游戏、市场名称和图片。", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(appId == null, { appId = null }, label = { Text("全部游戏") })
                     FilterChip(appId == 730, { appId = 730 }, label = { Text("CS2") })
                     FilterChip(appId == 570, { appId = 570 }, label = { Text("DOTA 2") })
                 }
@@ -414,6 +415,7 @@ private fun MarketBindingDialog(
                         ) {
                             Column(Modifier.padding(11.dp)) {
                                 Text(result.displayName, style = MaterialTheme.typography.titleMedium)
+                                Text(result.gameName.ifBlank { "App ${result.appId}" }, style = MaterialTheme.typography.bodySmall, color = SteamBlue)
                                 Text(result.marketHashName, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 2)
                             }
                         }
