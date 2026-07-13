@@ -220,11 +220,11 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
             val steam = platformProfiles.value.firstOrNull { it.name.equals("Steam", true) }
             var succeeded = 0
             var failed = 0
+            var lastFailure: String? = null
             _marketRefresh.value = MarketRefreshState(running = true, total = bound.size)
             bound.forEachIndexed { index, holding ->
-                runCatching {
-                    marketGateway.quote(holding.item.marketAppId!!, holding.item.marketHashName!!)
-                }.onSuccess { quote ->
+                try {
+                    val quote = marketGateway.quote(holding.item.marketAppId!!, holding.item.marketHashName!!)
                     repository.saveQuote(
                         holding.item.id,
                         quote.grossPriceCents,
@@ -233,7 +233,12 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
                         quote.volume
                     )
                     succeeded++
-                }.onFailure { failed++ }
+                } catch (cause: CancellationException) {
+                    throw cause
+                } catch (cause: Throwable) {
+                    failed++
+                    lastFailure = cause.message ?: "未知错误"
+                }
                 _marketRefresh.value = MarketRefreshState(
                     running = true,
                     completed = index + 1,
@@ -249,7 +254,10 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
                 failed = failed,
                 lastUpdatedAt = System.currentTimeMillis()
             )
-            _operationMessage.value = "行情更新完成：成功 $succeeded，失败 $failed"
+            _operationMessage.value = buildString {
+                append("行情更新完成：成功 $succeeded，失败 $failed")
+                if (failed > 0 && !lastFailure.isNullOrBlank()) append("；最近错误：$lastFailure")
+            }
         }
     }
 

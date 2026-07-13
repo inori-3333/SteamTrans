@@ -34,13 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import coil.request.CachePolicy
-import coil.request.ImageRequest
 import com.steamtrans.ledger.data.ItemEntity
 import com.steamtrans.ledger.data.ItemType
 import com.steamtrans.ledger.formatMoney
@@ -126,13 +123,7 @@ fun ItemArtwork(item: ItemEntity, modifier: Modifier = Modifier) {
         )
         if (!item.imageUrl.isNullOrBlank()) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(item.imageUrl)
-                    .memoryCachePolicy(CachePolicy.ENABLED)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .networkCachePolicy(CachePolicy.ENABLED)
-                    .crossfade(180)
-                    .build(),
+                model = item.imageUrl,
                 contentDescription = item.name,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.matchParentSize().padding(4.dp)
