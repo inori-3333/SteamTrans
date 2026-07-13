@@ -1,0 +1,668 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "9d42b9a826e9992fbf98cff55a77f900",
+    "entities": [
+      {
+        "tableName": "items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `game` TEXT NOT NULL, `type` TEXT NOT NULL, `marketPriceCents` INTEGER NOT NULL, `note` TEXT NOT NULL, `useCount` INTEGER NOT NULL, `trackingMode` TEXT NOT NULL DEFAULT 'STACKABLE', `tradeable` INTEGER NOT NULL DEFAULT 0, `marketAppId` INTEGER, `marketHashName` TEXT, `imageUrl` TEXT, `trackingReviewed` INTEGER NOT NULL DEFAULT 1, `createdAt` INTEGER NOT NULL DEFAULT 0, `updatedAt` INTEGER NOT NULL DEFAULT 0)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "game",
+            "columnName": "game",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "marketPriceCents",
+            "columnName": "marketPriceCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "useCount",
+            "columnName": "useCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackingMode",
+            "columnName": "trackingMode",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'STACKABLE'"
+          },
+          {
+            "fieldPath": "tradeable",
+            "columnName": "tradeable",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "marketAppId",
+            "columnName": "marketAppId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "marketHashName",
+            "columnName": "marketHashName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "imageUrl",
+            "columnName": "imageUrl",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "trackingReviewed",
+            "columnName": "trackingReviewed",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_items_name_game_type",
+            "unique": true,
+            "columnNames": [
+              "name",
+              "game",
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_items_name_game_type` ON `${TABLE_NAME}` (`name`, `game`, `type`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "ledger_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `type` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `platform` TEXT NOT NULL, `feeCents` INTEGER NOT NULL, `note` TEXT NOT NULL, `status` TEXT NOT NULL DEFAULT 'ACTIVE', `accountType` TEXT NOT NULL DEFAULT 'STEAM_WALLET_CNY', `accountDeltaCents` INTEGER NOT NULL DEFAULT 0, `feeRateBps` INTEGER NOT NULL DEFAULT 0, `fixedFeeCents` INTEGER NOT NULL DEFAULT 0, `legacy` INTEGER NOT NULL DEFAULT 0, `updatedAt` INTEGER NOT NULL DEFAULT 0)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "platform",
+            "columnName": "platform",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "feeCents",
+            "columnName": "feeCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'ACTIVE'"
+          },
+          {
+            "fieldPath": "accountType",
+            "columnName": "accountType",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'STEAM_WALLET_CNY'"
+          },
+          {
+            "fieldPath": "accountDeltaCents",
+            "columnName": "accountDeltaCents",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "feeRateBps",
+            "columnName": "feeRateBps",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "fixedFeeCents",
+            "columnName": "fixedFeeCents",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "legacy",
+            "columnName": "legacy",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "event_lines",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `eventId` INTEGER NOT NULL, `itemId` INTEGER NOT NULL, `direction` TEXT NOT NULL, `quantity` INTEGER NOT NULL, `unitPriceCents` INTEGER NOT NULL, `allocatedCostCents` INTEGER NOT NULL, FOREIGN KEY(`eventId`) REFERENCES `ledger_events`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`itemId`) REFERENCES `items`(`id`) ON UPDATE NO ACTION ON DELETE NO ACTION )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "itemId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "direction",
+            "columnName": "direction",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPriceCents",
+            "columnName": "unitPriceCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "allocatedCostCents",
+            "columnName": "allocatedCostCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_event_lines_eventId",
+            "unique": false,
+            "columnNames": [
+              "eventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_event_lines_eventId` ON `${TABLE_NAME}` (`eventId`)"
+          },
+          {
+            "name": "index_event_lines_itemId",
+            "unique": false,
+            "columnNames": [
+              "itemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_event_lines_itemId` ON `${TABLE_NAME}` (`itemId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ledger_events",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "eventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "items",
+            "onDelete": "NO ACTION",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "itemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "lot_allocations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `eventLineId` INTEGER NOT NULL, `sourceLineId` INTEGER NOT NULL, `quantity` INTEGER NOT NULL, `unitOrdinal` INTEGER, FOREIGN KEY(`eventLineId`) REFERENCES `event_lines`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`sourceLineId`) REFERENCES `event_lines`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventLineId",
+            "columnName": "eventLineId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceLineId",
+            "columnName": "sourceLineId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitOrdinal",
+            "columnName": "unitOrdinal",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_lot_allocations_eventLineId",
+            "unique": false,
+            "columnNames": [
+              "eventLineId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lot_allocations_eventLineId` ON `${TABLE_NAME}` (`eventLineId`)"
+          },
+          {
+            "name": "index_lot_allocations_sourceLineId",
+            "unique": false,
+            "columnNames": [
+              "sourceLineId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lot_allocations_sourceLineId` ON `${TABLE_NAME}` (`sourceLineId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "event_lines",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "eventLineId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "event_lines",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sourceLineId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "platform_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `defaultAccountType` TEXT NOT NULL, `buyFeeRateBps` INTEGER NOT NULL, `buyFixedFeeCents` INTEGER NOT NULL, `sellFeeRateBps` INTEGER NOT NULL, `sellFixedFeeCents` INTEGER NOT NULL, `builtIn` INTEGER NOT NULL, `enabled` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "defaultAccountType",
+            "columnName": "defaultAccountType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyFeeRateBps",
+            "columnName": "buyFeeRateBps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyFixedFeeCents",
+            "columnName": "buyFixedFeeCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sellFeeRateBps",
+            "columnName": "sellFeeRateBps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sellFixedFeeCents",
+            "columnName": "sellFixedFeeCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "builtIn",
+            "columnName": "builtIn",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_platform_profiles_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_platform_profiles_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "market_quotes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `itemId` INTEGER NOT NULL, `grossPriceCents` INTEGER NOT NULL, `estimatedNetPriceCents` INTEGER NOT NULL, `source` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `volume` TEXT NOT NULL, FOREIGN KEY(`itemId`) REFERENCES `items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "itemId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grossPriceCents",
+            "columnName": "grossPriceCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatedNetPriceCents",
+            "columnName": "estimatedNetPriceCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "volume",
+            "columnName": "volume",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_market_quotes_itemId",
+            "unique": false,
+            "columnNames": [
+              "itemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_market_quotes_itemId` ON `${TABLE_NAME}` (`itemId`)"
+          },
+          {
+            "name": "index_market_quotes_itemId_timestamp",
+            "unique": true,
+            "columnNames": [
+              "itemId",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_market_quotes_itemId_timestamp` ON `${TABLE_NAME}` (`itemId`, `timestamp`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "items",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "itemId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "portfolio_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `trigger` TEXT NOT NULL, `fiatBalanceCents` INTEGER NOT NULL, `walletBalanceCents` INTEGER NOT NULL, `fiatHoldingCostCents` INTEGER NOT NULL, `walletHoldingCostCents` INTEGER NOT NULL, `marketGrossCents` INTEGER NOT NULL, `marketNetCents` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trigger",
+            "columnName": "trigger",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fiatBalanceCents",
+            "columnName": "fiatBalanceCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletBalanceCents",
+            "columnName": "walletBalanceCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fiatHoldingCostCents",
+            "columnName": "fiatHoldingCostCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "walletHoldingCostCents",
+            "columnName": "walletHoldingCostCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "marketGrossCents",
+            "columnName": "marketGrossCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "marketNetCents",
+            "columnName": "marketNetCents",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_portfolio_snapshots_timestamp",
+            "unique": false,
+            "columnNames": [
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_portfolio_snapshots_timestamp` ON `${TABLE_NAME}` (`timestamp`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9d42b9a826e9992fbf98cff55a77f900')"
+    ]
+  }
+}

@@ -93,7 +93,7 @@ class ConversionPersistenceTest {
     }
 
     @Test
-    fun deletingRequiredBuyIsRejectedWithoutChangingLedger() = runBlocking {
+    fun voidingRequiredBuyIsRejectedWithoutChangingLedger() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val db = LedgerDatabase.get(context)
         db.clearAllTables()
@@ -115,8 +115,8 @@ class ConversionPersistenceTest {
         val buyId = repository.snapshot.first().events.single { it.event.type == EventType.BUY }.event.id
 
         try {
-            repository.deleteEvent(buyId)
-            fail("仍被卖出流水依赖的买入记录不应删除")
+            repository.setEventVoided(buyId, true)
+            fail("仍被卖出流水依赖的买入记录不应作废")
         } catch (_: IllegalArgumentException) {
             // 预期：删除校验失败时事务回滚。
         }
