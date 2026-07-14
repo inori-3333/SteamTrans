@@ -126,4 +126,26 @@ class ConversionPersistenceTest {
         assertEquals(2, snapshot.events.size)
         assertEquals(100, snapshot.totalRealizedPnlCents)
     }
+
+    @Test
+    fun removingPortfolioSnapshotKeepsLedgerData() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val db = LedgerDatabase.get(context)
+        db.clearAllTables()
+        val repository = LedgerRepository(db)
+        repository.addItemWithInitialBuy(
+            ItemEntity(name = "趋势测试物品", type = ItemType.SKIN),
+            EventDraft(
+                type = EventType.BUY,
+                lines = listOf(DraftLine(0, LineDirection.IN, 1, 100))
+            )
+        )
+
+        val point = repository.allPortfolioSnapshots().single()
+        repository.removePortfolioSnapshot(point.id)
+
+        assertEquals(0, repository.allPortfolioSnapshots().size)
+        assertEquals(1, repository.snapshot.first().events.size)
+        assertEquals(1, repository.snapshot.first().holdings.single().quantity)
+    }
 }

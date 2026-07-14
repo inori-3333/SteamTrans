@@ -3,6 +3,7 @@ package com.steamtrans.ledger.ui.overview
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,8 +50,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.steamtrans.ledger.data.AccountType
@@ -76,6 +82,7 @@ import com.steamtrans.ledger.ui.theme.Warning
 import com.steamtrans.ledger.ui.theme.WalletBlue
 import com.steamtrans.ledger.ui.theme.categoryColor
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 private enum class TrendRange(val label: String, val days: Int?) { DAYS_7("7 天", 7), DAYS_30("30 天", 30), ALL("全部", null) }
 
@@ -85,7 +92,8 @@ fun OverviewScreen(
     portfolioSnapshots: List<PortfolioSnapshotEntity>,
     onOpenSettings: () -> Unit,
     onOpenLedger: (AccountType?) -> Unit,
-    onAdjustAccount: (AccountType, Long, String) -> Unit
+    onAdjustAccount: (AccountType, Long, String) -> Unit,
+    onRemovePortfolioSnapshot: (Long) -> Unit
 ) {
     var adjusting by remember { mutableStateOf<AccountType?>(null) }
     var trendRange by remember { mutableStateOf(TrendRange.DAYS_30) }
@@ -183,7 +191,10 @@ fun OverviewScreen(
             }
             Spacer(Modifier.height(10.dp))
             val cutoff = trendRange.days?.let { System.currentTimeMillis() - it * 24L * 60 * 60 * 1000 }
-            TrendPanel(portfolioSnapshots.filter { cutoff == null || it.timestamp >= cutoff })
+            TrendPanel(
+                points = portfolioSnapshots.filter { cutoff == null || it.timestamp >= cutoff },
+                onRemovePoint = onRemovePortfolioSnapshot
+            )
         }
         item {
             SectionHeading("持仓构成")
@@ -285,8 +296,27 @@ private fun PnlPanel(label: String, pnl: Long, accent: Color, modifier: Modifier
     }
 }
 
+internal fun trendPointIndexForX(x: Float, width: Float, pointCount: Int): Int? {
+    if (pointCount <= 0 || width <= 0f || !x.isFinite() || !width.isFinite()) return null
+    if (pointCount == 1) return 0
+    return ((x / width).coerceIn(0f, 1f) * (pointCount - 1)).roundToInt()
+}
+
 @Composable
-private fun TrendPanel(points: List<PortfolioSnapshotEntity>) {
+private fun TrendPanel(
+    points: List<PortfolioSnapshotEntity>,
+    onRemovePoint: (Long) -> Unit
+) {
+    var selectedPointId by remember { mutableStateOf<Long?>(null) }
+    var pendingRemoval by remember { mutableStateOf<PortfolioSnapshotEntity?>(null) }
+    val selectedIndex = points.indexOfFirst { it.id == selectedPointId }
+    val selectedPoint = points.getOrNull(selectedIndex)
+    val chartSurfaceColor = MaterialTheme.colorScheme.surface
+
+    LaunchedEffect(points, selectedPointId) {
+        if (selectedPointId != null && selectedPoint == null) selectedPointId = null
+    }
+
     Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(16.dp)) {
             if (points.size < 2) {
@@ -299,30 +329,114 @@ private fun TrendPanel(points: List<PortfolioSnapshotEntity>) {
                 val values = points.flatMap { listOf(it.fiatBalanceCents, it.walletBalanceCents, it.marketNetCents) }
                 val min = values.minOrNull() ?: 0
                 val max = values.maxOrNull() ?: 1
-                Canvas(Modifier.fillMaxWidth().height(154.dp)) {
+                Text("轻触折线查看该时刻的精确数值", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                Canvas(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(154.dp)
+                        .testTag("trend-chart")
+                        .semantics {
+                            contentDescription = if (selectedPoint == null) {
+                                "余额与估值趋势图，轻触可查看精确数值"
+                            } else {
+                                "已选择 ${formatDateTime(selectedPoint.timestamp)} 的趋势点"
+                            }
+                        }
+                        .pointerInput(points) {
+                            detectTapGestures { offset ->
+                                trendPointIndexForX(offset.x, size.width.toFloat(), points.size)?.let { index ->
+                                    selectedPointId = points[index].id
+                                }
+                            }
+                        }
+                ) {
+                    fun pointOffset(index: Int, value: Long): Offset {
+                        val x = size.width * index / (points.size - 1)
+                        val ratio = if (max == min) .5f else (value - min).toFloat() / (max - min).toFloat()
+                        return Offset(x, size.height - ratio * size.height)
+                    }
+
                     fun drawSeries(color: Color, selector: (PortfolioSnapshotEntity) -> Long) {
                         val path = Path()
                         points.forEachIndexed { index, point ->
-                            val x = if (points.size == 1) 0f else size.width * index / (points.size - 1)
-                            val ratio = if (max == min) .5f else (selector(point) - min).toFloat() / (max - min).toFloat()
-                            val y = size.height - ratio * size.height
-                            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                            val offset = pointOffset(index, selector(point))
+                            if (index == 0) path.moveTo(offset.x, offset.y) else path.lineTo(offset.x, offset.y)
                         }
                         drawPath(path, color, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
+                        if (points.size <= 60) {
+                            points.forEachIndexed { index, point ->
+                                drawCircle(color, radius = 1.8.dp.toPx(), center = pointOffset(index, selector(point)))
+                            }
+                        }
                     }
                     drawLine(color = RaisedBlue, start = Offset(0f, size.height / 2), end = Offset(size.width, size.height / 2), strokeWidth = 1.dp.toPx())
                     drawSeries(FiatGold) { it.fiatBalanceCents }
                     drawSeries(WalletBlue) { it.walletBalanceCents }
                     drawSeries(Gain) { it.marketNetCents }
+
+                    if (selectedIndex >= 0) {
+                        val x = size.width * selectedIndex / (points.size - 1)
+                        drawLine(
+                            color = TextSecondary.copy(alpha = .45f),
+                            start = Offset(x, 0f),
+                            end = Offset(x, size.height),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                        listOf(
+                            FiatGold to points[selectedIndex].fiatBalanceCents,
+                            WalletBlue to points[selectedIndex].walletBalanceCents,
+                            Gain to points[selectedIndex].marketNetCents
+                        ).forEach { (color, value) ->
+                            val center = pointOffset(selectedIndex, value)
+                            drawCircle(chartSurfaceColor, radius = 5.5.dp.toPx(), center = center)
+                            drawCircle(color, radius = 3.5.dp.toPx(), center = center)
+                        }
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Legend("人民币余额", FiatGold)
-                    Legend("钱包余额", WalletBlue)
-                    Legend("预计到手", Gain)
+                if (selectedPoint == null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Legend("人民币余额", FiatGold)
+                        Legend("钱包余额", WalletBlue)
+                        Legend("预计到手", Gain)
+                    }
+                } else {
+                    Surface(color = RaisedBlue, shape = RoundedCornerShape(14.dp)) {
+                        Column(Modifier.padding(horizontal = 13.dp, vertical = 10.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    formatDateTime(selectedPoint.timestamp),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { pendingRemoval = selectedPoint }) {
+                                    Text("从趋势中移除", color = Loss)
+                                }
+                            }
+                            MetricLine("人民币余额", selectedPoint.fiatBalanceCents, FiatGold)
+                            MetricLine("钱包余额", selectedPoint.walletBalanceCents, WalletBlue)
+                            MetricLine("预计到手", selectedPoint.marketNetCents, Gain)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    pendingRemoval?.let { point ->
+        AlertDialog(
+            onDismissRequest = { pendingRemoval = null },
+            title = { Text("移除这个趋势点？") },
+            text = { Text("${formatDateTime(point.timestamp)} 的历史快照会从图表中移除。流水、余额、持仓和行情记录都不会改变；此操作无法撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingRemoval = null
+                    onRemovePoint(point.id)
+                }) { Text("确认移除", color = Loss) }
+            },
+            dismissButton = { TextButton(onClick = { pendingRemoval = null }) { Text("取消") } }
+        )
     }
 }
 

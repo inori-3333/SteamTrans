@@ -135,6 +135,9 @@ interface LedgerDao {
     @Query("DELETE FROM portfolio_snapshots")
     suspend fun deletePortfolioSnapshots()
 
+    @Query("DELETE FROM portfolio_snapshots WHERE id = :id")
+    suspend fun deletePortfolioSnapshot(id: Long): Int
+
     @Query("DELETE FROM platform_profiles")
     suspend fun deletePlatformProfiles()
 

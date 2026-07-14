@@ -130,7 +130,8 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
                         portfolioSnapshots = portfolioSnapshots,
                         onOpenSettings = { navController.navigate("settings") },
                         onOpenLedger = { account -> ledgerAccountFilter = account; navController.navigate("ledger") },
-                        onAdjustAccount = vm::adjustAccount
+                        onAdjustAccount = vm::adjustAccount,
+                        onRemovePortfolioSnapshot = vm::removePortfolioSnapshot
                     )
                 }
             }

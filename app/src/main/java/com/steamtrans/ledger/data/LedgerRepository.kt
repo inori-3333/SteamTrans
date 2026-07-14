@@ -250,6 +250,11 @@ class LedgerRepository(private val db: LedgerDatabase) {
         dao.deletePortfolioSnapshots()
     }
 
+    suspend fun removePortfolioSnapshot(id: Long) {
+        require(id > 0) { "趋势点无效" }
+        require(dao.deletePortfolioSnapshot(id) == 1) { "趋势点不存在或已被移除" }
+    }
+
     suspend fun currentSnapshot(): LedgerSnapshot = db.withTransaction { calculateCurrent() }
     suspend fun allItems(): List<ItemEntity> = dao.getItems()
     suspend fun allEvents(): List<EventView> = db.withTransaction { loadViews() }

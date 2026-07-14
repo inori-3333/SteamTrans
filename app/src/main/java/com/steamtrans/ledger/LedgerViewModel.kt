@@ -190,6 +190,10 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearAll(done: () -> Unit = {}) = launchOperation("清空失败", done) { repository.clearAll() }
     fun clearMarketData(done: () -> Unit = {}) = launchOperation("清空行情失败", done) { repository.clearMarketData() }
+    fun removePortfolioSnapshot(id: Long) = launchOperation("移除趋势点失败") {
+        repository.removePortfolioSnapshot(id)
+        _operationMessage.value = "已移除该趋势点；账务和行情数据未修改"
+    }
 
     fun searchMarket(query: String, appId: Int?) {
         if (_marketSearch.value.running) return
