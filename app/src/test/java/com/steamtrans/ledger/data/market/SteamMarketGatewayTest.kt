@@ -2,8 +2,14 @@ package com.steamtrans.ledger.data.market
 
 import com.steamtrans.ledger.data.AccountType
 import com.steamtrans.ledger.data.PlatformProfileEntity
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -111,6 +117,43 @@ class SteamMarketGatewayTest {
 
         assertNull(CommunityMarketGateway.parseLowestListingPrice(overview))
         assertEquals(1234L, CommunityMarketGateway.parseHighestBuyOrderPrice(histogram))
+    }
+
+    @Test
+    fun optsOutOfNewMarketPageBeforeLoadingLegacyOrderId() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            requests += request
+            val body = when (request.url.encodedPath) {
+                "/market/priceoverview/" -> """{"success":true}"""
+                "/market/itemordershistogram" ->
+                    """{"success":1,"highest_buy_order":"628"}"""
+                else -> "Market_LoadOrderSpread( 176024744 );"
+            }
+            Response.Builder()
+                .request(request)
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(body.toResponseBody("application/json".toMediaType()))
+                .build()
+        }.build()
+
+        val quote = CommunityMarketGateway(client).quote(
+            753,
+            "544610-Battlestar Galactica Deadlock Booster Pack"
+        )
+
+        assertEquals(628L, quote.grossPriceCents)
+        val listingRequest = requests.single {
+            it.url.encodedPath.startsWith("/market/listings/")
+        }
+        assertEquals("bMarketOptOut=1", listingRequest.header("Cookie"))
+        val histogramRequest = requests.single {
+            it.url.encodedPath == "/market/itemordershistogram"
+        }
+        assertEquals("23", histogramRequest.url.queryParameter("currency"))
     }
 
     @Test

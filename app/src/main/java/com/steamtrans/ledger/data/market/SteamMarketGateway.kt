@@ -132,7 +132,11 @@ class CommunityMarketGateway(
     ): Long? {
         val cacheKey = "$appId:$marketHashName"
         val itemNameId = itemNameIdCache[cacheKey] ?: parseItemNameId(
-            getBody(listingUrl, MarketHomeUrl)
+            getBody(
+                listingUrl,
+                MarketHomeUrl,
+                mapOf("Cookie" to LegacyMarketOptOutCookie)
+            )
         )?.also { itemNameIdCache[cacheKey] = it } ?: return null
         val histogramUrl = "https://steamcommunity.com/market/itemordershistogram".toHttpUrl().newBuilder()
             .addQueryParameter("country", "CN")
@@ -151,10 +155,14 @@ class CommunityMarketGateway(
     private suspend fun getJson(url: String, referer: String? = null) =
         json.parseToJsonElement(getBody(url, referer)).jsonObject
 
-    private suspend fun getBody(url: String, referer: String? = null): String = requestMutex.withLock {
+    private suspend fun getBody(
+        url: String,
+        referer: String? = null,
+        headers: Map<String, String> = emptyMap()
+    ): String = requestMutex.withLock {
         for (attempt in 0..RateLimitBackoffMillis.size) {
             waitForRequestSlot()
-            val result = executeRequest(url, referer)
+            val result = executeRequest(url, referer, headers)
             lastRequestCompletedAtNanos = System.nanoTime()
             if (!result.rateLimited && !isRateLimitedResponse(result.body)) {
                 return@withLock result.body
@@ -174,12 +182,17 @@ class CommunityMarketGateway(
         if (waitMillis > 0) delay(waitMillis)
     }
 
-    private fun executeRequest(url: String, referer: String?): MarketHttpResult {
+    private fun executeRequest(
+        url: String,
+        referer: String?,
+        headers: Map<String, String>
+    ): MarketHttpResult {
         val request = Request.Builder()
             .url(url)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.5")
             .header("User-Agent", "SteamLedger/2.0 (personal offline ledger)")
             .apply { referer?.let { header("Referer", it) } }
+            .apply { headers.forEach { (name, value) -> header(name, value) } }
             .build()
         return client.newCall(request).execute().use { response ->
             val rateLimited = response.code == 429
@@ -228,6 +241,7 @@ class CommunityMarketGateway(
     companion object {
         private const val ImageBaseUrl = "https://community.fastly.steamstatic.com/economy/image"
         private const val MarketHomeUrl = "https://steamcommunity.com/market/"
+        private const val LegacyMarketOptOutCookie = "bMarketOptOut=1"
         private const val MinimumRequestIntervalMillis = 1_000L
         private val RateLimitBackoffMillis = longArrayOf(2_000L, 5_000L, 10_000L)
 
