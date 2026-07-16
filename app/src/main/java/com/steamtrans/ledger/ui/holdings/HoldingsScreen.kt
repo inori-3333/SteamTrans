@@ -74,6 +74,7 @@ import com.steamtrans.ledger.data.LedgerSnapshot
 import com.steamtrans.ledger.data.MarketQuoteEntity
 import com.steamtrans.ledger.data.TrackingMode
 import com.steamtrans.ledger.data.market.SteamMarketSearchResult
+import com.steamtrans.ledger.data.market.parseSteamMarketListingUrl
 import com.steamtrans.ledger.formatDateTime
 import com.steamtrans.ledger.formatMoney
 import com.steamtrans.ledger.parseMoney
@@ -95,6 +96,8 @@ import java.math.BigDecimal
 
 private enum class HoldingSort(val label: String) { VALUE("预计价值"), COST("持仓成本"), QUANTITY("数量"), NAME("名称") }
 
+private enum class MarketBindingMode { SEARCH, URL }
+
 private data class HoldingRow(val item: ItemEntity, val holding: Holding?, val events: List<EventView>)
 
 @Composable
@@ -108,6 +111,7 @@ fun HoldingsScreen(
     onSearchMarket: (String, Int?) -> Unit,
     onClearSearch: () -> Unit,
     onBindMarket: (Long, SteamMarketSearchResult) -> Unit,
+    onBindMarketUrl: (Long, String, () -> Unit) -> Unit,
     onUnbindMarket: (Long) -> Unit,
     onManualQuote: (Long, Long) -> Unit
 ) {
@@ -253,6 +257,12 @@ fun HoldingsScreen(
             searchState = searchState,
             onSearch = onSearchMarket,
             onSelect = { result -> onBindMarket(item.id, result); bindingItem = null; onClearSearch() },
+            onSaveUrl = { url ->
+                onBindMarketUrl(item.id, url) {
+                    bindingItem = null
+                    onClearSearch()
+                }
+            },
             onDismiss = { bindingItem = null; onClearSearch() }
         )
     }
@@ -397,45 +407,84 @@ private fun MarketBindingDialog(
     searchState: MarketSearchState,
     onSearch: (String, Int?) -> Unit,
     onSelect: (SteamMarketSearchResult) -> Unit,
+    onSaveUrl: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var query by remember(item.id) { mutableStateOf(item.name) }
     var appId by remember(item.id) { mutableStateOf<Int?>(null) }
+    var mode by remember(item.id) { mutableStateOf(MarketBindingMode.SEARCH) }
+    var marketUrl by remember(item.id) { mutableStateOf("") }
+    var urlError by remember(item.id) { mutableStateOf<String?>(null) }
+
+    fun saveUrl() {
+        val error = runCatching { parseSteamMarketListingUrl(marketUrl) }.exceptionOrNull()?.message
+        urlError = error
+        if (error == null) onSaveUrl(marketUrl.trim())
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("绑定 Steam 市场") },
         text = {
             Column {
-                Text("默认搜索全部游戏；选择结果后会保存对应游戏、市场名称和图片。", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(appId == null, { appId = null }, label = { Text("全部游戏") })
-                    FilterChip(appId == 730, { appId = 730 }, label = { Text("CS2") })
-                    FilterChip(appId == 570, { appId = 570 }, label = { Text("DOTA 2") })
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(mode == MarketBindingMode.SEARCH, { mode = MarketBindingMode.SEARCH }, label = { Text("搜索物品") })
+                    FilterChip(mode == MarketBindingMode.URL, { mode = MarketBindingMode.URL }, label = { Text("输入 URL") })
                 }
-                OutlinedTextField(query, { query = it }, label = { Text("市场搜索词") }, singleLine = true, modifier = Modifier.fillMaxWidth(), trailingIcon = { IconButton({ onSearch(query, appId) }, enabled = query.trim().length >= 2 && !searchState.running) { Icon(Icons.Outlined.Search, "搜索") } })
                 Spacer(Modifier.height(10.dp))
-                if (searchState.running) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (searchState.error != null) Text(searchState.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                Column(Modifier.height(250.dp).verticalScroll(rememberScrollState())) {
-                    searchState.results.forEach { result ->
-                        Surface(
-                            Modifier.fillMaxWidth().clickable { onSelect(result) },
-                            color = RaisedBlue,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(Modifier.padding(11.dp)) {
-                                Text(result.displayName, style = MaterialTheme.typography.titleMedium)
-                                Text(result.gameName.ifBlank { "App ${result.appId}" }, style = MaterialTheme.typography.bodySmall, color = SteamBlue)
-                                Text(result.marketHashName, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 2)
-                            }
-                        }
-                        Spacer(Modifier.height(7.dp))
+                if (mode == MarketBindingMode.SEARCH) {
+                    Text("默认搜索全部游戏；选择结果后会保存对应游戏、市场名称和图片。", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(appId == null, { appId = null }, label = { Text("全部游戏") })
+                        FilterChip(appId == 730, { appId = 730 }, label = { Text("CS2") })
+                        FilterChip(appId == 570, { appId = 570 }, label = { Text("DOTA 2") })
                     }
+                    OutlinedTextField(query, { query = it }, label = { Text("市场搜索词") }, singleLine = true, modifier = Modifier.fillMaxWidth(), trailingIcon = { IconButton({ onSearch(query, appId) }, enabled = query.trim().length >= 2 && !searchState.running) { Icon(Icons.Outlined.Search, "搜索") } })
+                    Spacer(Modifier.height(10.dp))
+                    if (searchState.running) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (searchState.error != null) Text(searchState.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Column(Modifier.height(250.dp).verticalScroll(rememberScrollState())) {
+                        searchState.results.forEach { result ->
+                            Surface(
+                                Modifier.fillMaxWidth().clickable { onSelect(result) },
+                                color = RaisedBlue,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(Modifier.padding(11.dp)) {
+                                    Text(result.displayName, style = MaterialTheme.typography.titleMedium)
+                                    Text(result.gameName.ifBlank { "App ${result.appId}" }, style = MaterialTheme.typography.bodySmall, color = SteamBlue)
+                                    Text(result.marketHashName, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 2)
+                                }
+                            }
+                            Spacer(Modifier.height(7.dp))
+                        }
+                    }
+                } else {
+                    Text("粘贴物品的 Steam 市场页面 URL，保存时会校验域名、路径、AppID 和物品名称。", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = marketUrl,
+                        onValueChange = { marketUrl = it; urlError = null },
+                        label = { Text("Steam 市场 URL") },
+                        placeholder = { Text("https://steamcommunity.com/market/listings/...") },
+                        supportingText = urlError?.let { message -> { Text(message) } },
+                        isError = urlError != null,
+                        singleLine = false,
+                        minLines = 2,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onSearch(query, appId) }, enabled = query.trim().length >= 2 && !searchState.running) { Text("搜索") } },
+        confirmButton = {
+            if (mode == MarketBindingMode.SEARCH) {
+                TextButton(onClick = { onSearch(query, appId) }, enabled = query.trim().length >= 2 && !searchState.running) { Text("搜索") }
+            } else {
+                Button(onClick = ::saveUrl, enabled = marketUrl.isNotBlank()) { Text("保存绑定") }
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
     )
 }

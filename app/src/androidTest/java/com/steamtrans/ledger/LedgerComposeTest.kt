@@ -34,6 +34,7 @@ class LedgerComposeTest {
                     onSearchMarket = { _, _ -> },
                     onClearSearch = {},
                     onBindMarket = { _, _ -> },
+                    onBindMarketUrl = { _, _, _ -> },
                     onUnbindMarket = {},
                     onManualQuote = { _, _ -> }
                 )
@@ -90,6 +91,7 @@ class LedgerComposeTest {
                     onSearchMarket = { _, _ -> },
                     onClearSearch = {},
                     onBindMarket = { _, _ -> },
+                    onBindMarketUrl = { _, _, _ -> },
                     onUnbindMarket = {},
                     onManualQuote = { _, _ -> }
                 )

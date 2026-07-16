@@ -147,6 +147,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
                         onSearchMarket = vm::searchMarket,
                         onClearSearch = vm::clearMarketSearch,
                         onBindMarket = { itemId, result -> vm.bindMarket(itemId, result) },
+                        onBindMarketUrl = { itemId, url, done -> vm.bindMarketUrl(itemId, url, done) },
                         onUnbindMarket = vm::unbindMarket,
                         onManualQuote = { itemId, cents -> vm.setManualQuote(itemId, cents) }
                     )

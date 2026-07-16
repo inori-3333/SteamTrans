@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SteamMarketGatewayTest {
@@ -56,6 +57,39 @@ class SteamMarketGatewayTest {
         assertEquals("Booster Pack", allGames.queryParameter("query"))
         assertNull(allGames.queryParameter("appid"))
         assertEquals("730", cs2Only.queryParameter("appid"))
+    }
+
+    @Test
+    fun parsesAndNormalizesSteamMarketListingUrl() {
+        val listing = parseSteamMarketListingUrl(
+            " https://www.steamcommunity.com/market/listings/730/Dreams%20%26%20Nightmares%20Case?l=schinese "
+        )
+
+        assertEquals(730, listing.appId)
+        assertEquals("Dreams & Nightmares Case", listing.marketHashName)
+        assertEquals(
+            "https://steamcommunity.com/market/listings/730/Dreams%20&%20Nightmares%20Case",
+            listing.listingUrl
+        )
+    }
+
+    @Test
+    fun rejectsUrlsThatAreNotSteamMarketListings() {
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSteamMarketListingUrl("https://example.com/market/listings/730/Item")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSteamMarketListingUrl("https://steamcommunity.com/market/search?q=Item")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSteamMarketListingUrl("http://steamcommunity.com/market/listings/730/Item")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSteamMarketListingUrl("https://steamcommunity.com/market/listings/not-an-app/Item")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseSteamMarketListingUrl("https://steamcommunity.com:444/market/listings/730/Item")
+        }
     }
 
     @Test

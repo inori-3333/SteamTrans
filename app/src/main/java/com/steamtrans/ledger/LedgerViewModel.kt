@@ -24,6 +24,7 @@ import com.steamtrans.ledger.data.TrackingMode
 import com.steamtrans.ledger.data.market.CommunityMarketGateway
 import com.steamtrans.ledger.data.market.SteamMarketSearchResult
 import com.steamtrans.ledger.data.market.estimateNetPrice
+import com.steamtrans.ledger.data.market.parseSteamMarketListingUrl
 import com.steamtrans.ledger.domain.backup.BackupPreview
 import com.steamtrans.ledger.domain.backup.BackupService
 import com.steamtrans.ledger.domain.ledger.RoomLedgerCommandService
@@ -158,6 +159,12 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     fun bindMarket(itemId: Long, result: SteamMarketSearchResult, done: () -> Unit = {}) =
         launchOperation("绑定行情失败", done) {
             repository.bindMarket(itemId, MarketBindingDraft(result.appId, result.marketHashName, result.imageUrl))
+        }
+
+    fun bindMarketUrl(itemId: Long, marketUrl: String, done: () -> Unit = {}) =
+        launchOperation("绑定行情失败", done) {
+            val listing = parseSteamMarketListingUrl(marketUrl)
+            repository.bindMarket(itemId, MarketBindingDraft(listing.appId, listing.marketHashName))
         }
 
     fun unbindMarket(itemId: Long) = launchOperation("解除绑定失败") { repository.unbindMarket(itemId) }

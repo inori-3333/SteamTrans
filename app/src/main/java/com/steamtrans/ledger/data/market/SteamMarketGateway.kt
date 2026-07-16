@@ -17,6 +17,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.math.BigDecimal
@@ -38,6 +39,43 @@ data class SteamMarketQuote(
     val grossPriceCents: Long,
     val volume: String = ""
 )
+
+data class SteamMarketListing(
+    val appId: Int,
+    val marketHashName: String,
+    val listingUrl: String
+)
+
+fun parseSteamMarketListingUrl(value: String): SteamMarketListing {
+    val url = value.trim().toHttpUrlOrNull()
+        ?: throw IllegalArgumentException("请输入有效的 Steam 市场 URL")
+    require(url.scheme == "https") { "Steam 市场 URL 必须使用 HTTPS" }
+    require(url.host == "steamcommunity.com" || url.host == "www.steamcommunity.com") {
+        "仅支持 steamcommunity.com 的市场 URL"
+    }
+    require(url.port == 443) { "Steam 市场 URL 的端口无效" }
+    require(url.username.isEmpty() && url.password.isEmpty()) { "Steam 市场 URL 不能包含登录信息" }
+
+    val path = url.pathSegments.let { segments ->
+        if (segments.lastOrNull().isNullOrEmpty()) segments.dropLast(1) else segments
+    }
+    require(path.size == 4 && path[0] == "market" && path[1] == "listings") {
+        "URL 应为 Steam 市场物品页面（/market/listings/AppID/物品名）"
+    }
+    val appId = path[2].toIntOrNull()?.takeIf { it > 0 }
+        ?: throw IllegalArgumentException("Steam 市场 URL 中的 AppID 无效")
+    val marketHashName = path[3].trim()
+    require(marketHashName.isNotEmpty()) { "Steam 市场 URL 中缺少物品名称" }
+
+    val normalizedUrl = "https://steamcommunity.com".toHttpUrl().newBuilder()
+        .addPathSegment("market")
+        .addPathSegment("listings")
+        .addPathSegment(appId.toString())
+        .addPathSegment(marketHashName)
+        .build()
+        .toString()
+    return SteamMarketListing(appId, marketHashName, normalizedUrl)
+}
 
 interface SteamMarketGateway {
     suspend fun search(query: String, appId: Int? = null): List<SteamMarketSearchResult>

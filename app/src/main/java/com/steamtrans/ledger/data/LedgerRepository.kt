@@ -185,6 +185,8 @@ class LedgerRepository(private val db: LedgerDatabase) {
     }
 
     suspend fun bindMarket(itemId: Long, binding: MarketBindingDraft) = db.withTransaction {
+        require(binding.appId > 0) { "Steam 市场 AppID 无效" }
+        require(binding.marketHashName.trim().isNotEmpty()) { "Steam 市场物品名称不能为空" }
         val item = dao.getItems().firstOrNull { it.id == itemId } ?: error("物品不存在")
         dao.updateItem(
             item.copy(
