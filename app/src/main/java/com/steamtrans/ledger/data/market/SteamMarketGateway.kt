@@ -113,12 +113,37 @@ class CommunityMarketGateway(
             .build()
         val root = getJson(url.toString())
         require(root["success"]?.jsonPrimitive?.booleanOrNull == true) { "Steam 未返回有效行情" }
-        val priceText = root["lowest_price"]?.jsonPrimitive?.content.orEmpty()
-        val price = parseCnyPrice(priceText) ?: error("Steam 行情缺少最低挂牌价")
+        val price = parseLowestListingPrice(root)
+            ?: fetchHighestBuyOrderPrice(appId, marketHashName)
+            ?: error("Steam 行情既无最低寄售价，也无求购价")
         SteamMarketQuote(price, root["volume"]?.jsonPrimitive?.content.orEmpty())
     }
 
-    private fun getJson(url: String) = client.newCall(
+    private fun fetchHighestBuyOrderPrice(appId: Int, marketHashName: String): Long? {
+        val listingUrl = "https://steamcommunity.com".toHttpUrl().newBuilder()
+            .addPathSegment("market")
+            .addPathSegment("listings")
+            .addPathSegment(appId.toString())
+            .addPathSegment(marketHashName)
+            .build()
+        val itemNameId = parseItemNameId(getBody(listingUrl.toString()))
+            ?: error("Steam 市场物品页缺少订单标识")
+        val histogramUrl = "https://steamcommunity.com/market/itemordershistogram".toHttpUrl().newBuilder()
+            .addQueryParameter("country", "CN")
+            .addQueryParameter("language", "schinese")
+            .addQueryParameter("currency", "23")
+            .addQueryParameter("item_nameid", itemNameId)
+            .addQueryParameter("two_factor", "0")
+            .build()
+        val root = getJson(histogramUrl.toString())
+        val success = root["success"]?.jsonPrimitive
+        require(success?.booleanOrNull == true || success?.intOrNull == 1) { "Steam 未返回有效求购行情" }
+        return parseHighestBuyOrderPrice(root)
+    }
+
+    private fun getJson(url: String) = json.parseToJsonElement(getBody(url)).jsonObject
+
+    private fun getBody(url: String) = client.newCall(
         Request.Builder()
             .url(url)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.5")
@@ -126,8 +151,7 @@ class CommunityMarketGateway(
             .build()
     ).execute().use { response ->
         if (!response.isSuccessful) error("Steam 市场请求失败（${response.code}）")
-        val body = response.body?.string() ?: error("Steam 市场返回为空")
-        json.parseToJsonElement(body).jsonObject
+        response.body?.string() ?: error("Steam 市场返回为空")
     }
 
     private fun parseSearchHtml(html: String, fallbackAppId: Int?): List<SteamMarketSearchResult> {
@@ -221,6 +245,26 @@ class CommunityMarketGateway(
                 .replace(" ", "").replace(",", "").trim()
             BigDecimal(cleaned).movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact()
         }.getOrNull()
+
+        fun parseLowestListingPrice(root: JsonObject): Long? =
+            root["lowest_price"]?.jsonPrimitive?.contentOrNull?.let(::parseCnyPrice)?.takeIf { it > 0 }
+
+        fun parseItemNameId(html: String): String? =
+            Regex("""Market_LoadOrderSpread\(\s*(\d+)\s*\)""")
+                .find(html)
+                ?.groupValues
+                ?.get(1)
+
+        fun parseHighestBuyOrderPrice(root: JsonObject): Long? {
+            val rawCents = root["highest_buy_order"]?.jsonPrimitive?.contentOrNull
+                ?.trim()
+                ?.toLongOrNull()
+                ?.takeIf { it > 0 }
+            if (rawCents != null) return rawCents
+            return root["buy_order_price"]?.jsonPrimitive?.contentOrNull
+                ?.let(::parseCnyPrice)
+                ?.takeIf { it > 0 }
+        }
     }
 }
 

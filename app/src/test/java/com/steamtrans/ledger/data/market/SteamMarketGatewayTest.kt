@@ -101,6 +101,31 @@ class SteamMarketGatewayTest {
     }
 
     @Test
+    fun usesHighestBuyOrderWhenLowestListingPriceIsMissing() {
+        val overview = Json.parseToJsonElement(
+            """{"success":true,"volume":"3"}"""
+        ).jsonObject
+        val histogram = Json.parseToJsonElement(
+            """{"success":1,"highest_buy_order":"1234","buy_order_price":"¥ 12.34"}"""
+        ).jsonObject
+
+        assertNull(CommunityMarketGateway.parseLowestListingPrice(overview))
+        assertEquals(1234L, CommunityMarketGateway.parseHighestBuyOrderPrice(histogram))
+    }
+
+    @Test
+    fun extractsItemNameIdNeededForBuyOrderFallback() {
+        val html = """
+            <script>
+                Market_LoadOrderSpread( 176024744 );
+            </script>
+        """.trimIndent()
+
+        assertEquals("176024744", CommunityMarketGateway.parseItemNameId(html))
+        assertNull(CommunityMarketGateway.parseItemNameId("<html></html>"))
+    }
+
+    @Test
     fun estimatedSteamNetUsesConfiguredRateAndFixedFee() {
         val profile = PlatformProfileEntity(
             name = "Steam",
