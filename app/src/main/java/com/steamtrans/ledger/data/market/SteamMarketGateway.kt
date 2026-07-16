@@ -5,6 +5,8 @@ import com.steamtrans.ledger.data.PlatformProfileEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -24,6 +26,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 data class SteamMarketSearchResult(
@@ -90,6 +93,9 @@ class CommunityMarketGateway(
         .build()
 ) : SteamMarketGateway {
     private val json = Json { ignoreUnknownKeys = true }
+    private val requestMutex = Mutex()
+    private val itemNameIdCache = ConcurrentHashMap<String, String>()
+    private var lastRequestCompletedAtNanos = 0L
 
     override suspend fun search(query: String, appId: Int?): List<SteamMarketSearchResult> = withContext(Dispatchers.IO) {
         require(query.trim().length >= 2) { "至少输入 2 个字符" }
@@ -105,53 +111,87 @@ class CommunityMarketGateway(
     }
 
     override suspend fun quote(appId: Int, marketHashName: String): SteamMarketQuote = withContext(Dispatchers.IO) {
-        delay(180)
+        val listingUrl = buildListingUrl(appId, marketHashName)
         val url = "https://steamcommunity.com/market/priceoverview/".toHttpUrl().newBuilder()
             .addQueryParameter("currency", "23")
             .addQueryParameter("appid", appId.toString())
             .addQueryParameter("market_hash_name", marketHashName)
             .build()
-        val root = getJson(url.toString())
+        val root = getJson(url.toString(), listingUrl)
         require(root["success"]?.jsonPrimitive?.booleanOrNull == true) { "Steam 未返回有效行情" }
         val price = parseLowestListingPrice(root)
-            ?: fetchHighestBuyOrderPrice(appId, marketHashName)
+            ?: fetchHighestBuyOrderPrice(appId, marketHashName, listingUrl)
             ?: error("Steam 行情既无最低寄售价，也无求购价")
         SteamMarketQuote(price, root["volume"]?.jsonPrimitive?.content.orEmpty())
     }
 
-    private fun fetchHighestBuyOrderPrice(appId: Int, marketHashName: String): Long? {
-        val listingUrl = "https://steamcommunity.com".toHttpUrl().newBuilder()
-            .addPathSegment("market")
-            .addPathSegment("listings")
-            .addPathSegment(appId.toString())
-            .addPathSegment(marketHashName)
-            .build()
-        val itemNameId = parseItemNameId(getBody(listingUrl.toString()))
-            ?: error("Steam 市场物品页缺少订单标识")
+    private suspend fun fetchHighestBuyOrderPrice(
+        appId: Int,
+        marketHashName: String,
+        listingUrl: String
+    ): Long? {
+        val cacheKey = "$appId:$marketHashName"
+        val itemNameId = itemNameIdCache[cacheKey] ?: parseItemNameId(
+            getBody(listingUrl, MarketHomeUrl)
+        )?.also { itemNameIdCache[cacheKey] = it } ?: return null
         val histogramUrl = "https://steamcommunity.com/market/itemordershistogram".toHttpUrl().newBuilder()
             .addQueryParameter("country", "CN")
             .addQueryParameter("language", "schinese")
             .addQueryParameter("currency", "23")
             .addQueryParameter("item_nameid", itemNameId)
             .addQueryParameter("two_factor", "0")
+            .addQueryParameter("norender", "1")
             .build()
-        val root = getJson(histogramUrl.toString())
+        val root = getJson(histogramUrl.toString(), listingUrl)
         val success = root["success"]?.jsonPrimitive
         require(success?.booleanOrNull == true || success?.intOrNull == 1) { "Steam 未返回有效求购行情" }
         return parseHighestBuyOrderPrice(root)
     }
 
-    private fun getJson(url: String) = json.parseToJsonElement(getBody(url)).jsonObject
+    private suspend fun getJson(url: String, referer: String? = null) =
+        json.parseToJsonElement(getBody(url, referer)).jsonObject
 
-    private fun getBody(url: String) = client.newCall(
-        Request.Builder()
+    private suspend fun getBody(url: String, referer: String? = null): String = requestMutex.withLock {
+        for (attempt in 0..RateLimitBackoffMillis.size) {
+            waitForRequestSlot()
+            val result = executeRequest(url, referer)
+            lastRequestCompletedAtNanos = System.nanoTime()
+            if (!result.rateLimited && !isRateLimitedResponse(result.body)) {
+                return@withLock result.body
+            }
+            if (attempt == RateLimitBackoffMillis.size) {
+                error("Steam 市场请求过于频繁，请稍后再试")
+            }
+            delay(result.retryAfterMillis ?: RateLimitBackoffMillis[attempt])
+        }
+        error("Steam 市场请求过于频繁，请稍后再试")
+    }
+
+    private suspend fun waitForRequestSlot() {
+        if (lastRequestCompletedAtNanos == 0L) return
+        val elapsedMillis = (System.nanoTime() - lastRequestCompletedAtNanos) / 1_000_000L
+        val waitMillis = MinimumRequestIntervalMillis - elapsedMillis
+        if (waitMillis > 0) delay(waitMillis)
+    }
+
+    private fun executeRequest(url: String, referer: String?): MarketHttpResult {
+        val request = Request.Builder()
             .url(url)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.5")
             .header("User-Agent", "SteamLedger/2.0 (personal offline ledger)")
+            .apply { referer?.let { header("Referer", it) } }
             .build()
-    ).execute().use { response ->
-        if (!response.isSuccessful) error("Steam 市场请求失败（${response.code}）")
-        response.body?.string() ?: error("Steam 市场返回为空")
+        return client.newCall(request).execute().use { response ->
+            val rateLimited = response.code == 429
+            if (!response.isSuccessful && !rateLimited) error("Steam 市场请求失败（${response.code}）")
+            val body = response.body?.string().orEmpty()
+            if (body.isEmpty() && !rateLimited) error("Steam 市场返回为空")
+            val retryAfterMillis = response.header("Retry-After")
+                ?.toLongOrNull()
+                ?.times(1_000L)
+                ?.coerceIn(1_000L, 30_000L)
+            MarketHttpResult(body, rateLimited, retryAfterMillis)
+        }
     }
 
     private fun parseSearchHtml(html: String, fallbackAppId: Int?): List<SteamMarketSearchResult> {
@@ -187,6 +227,18 @@ class CommunityMarketGateway(
 
     companion object {
         private const val ImageBaseUrl = "https://community.fastly.steamstatic.com/economy/image"
+        private const val MarketHomeUrl = "https://steamcommunity.com/market/"
+        private const val MinimumRequestIntervalMillis = 1_000L
+        private val RateLimitBackoffMillis = longArrayOf(2_000L, 5_000L, 10_000L)
+
+        fun buildListingUrl(appId: Int, marketHashName: String): String =
+            "https://steamcommunity.com".toHttpUrl().newBuilder()
+                .addPathSegment("market")
+                .addPathSegment("listings")
+                .addPathSegment(appId.toString())
+                .addPathSegment(marketHashName)
+                .build()
+                .toString()
 
         fun buildSearchUrl(query: String, appId: Int?): HttpUrl {
             val builder = "https://steamcommunity.com/market/search/render/".toHttpUrl().newBuilder()
@@ -249,11 +301,23 @@ class CommunityMarketGateway(
         fun parseLowestListingPrice(root: JsonObject): Long? =
             root["lowest_price"]?.jsonPrimitive?.contentOrNull?.let(::parseCnyPrice)?.takeIf { it > 0 }
 
-        fun parseItemNameId(html: String): String? =
-            Regex("""Market_LoadOrderSpread\(\s*(\d+)\s*\)""")
-                .find(html)
-                ?.groupValues
-                ?.get(1)
+        fun parseItemNameId(html: String): String? {
+            val patterns = listOf(
+                Regex("""Market_LoadOrderSpread\(\s*(\d+)\s*\)"""),
+                Regex("""ItemActivityTicker\.Start\(\s*(\d+)\s*\)""")
+            )
+            return patterns.firstNotNullOfOrNull { pattern ->
+                pattern.find(html)?.groupValues?.get(1)
+            }
+        }
+
+        fun isRateLimitedResponse(body: String): Boolean {
+            val normalized = body.lowercase()
+            return normalized.contains("too many requests") ||
+                normalized.contains("请求次数过多") ||
+                normalized.contains("请求过于频繁") ||
+                normalized.contains("访问过于频繁")
+        }
 
         fun parseHighestBuyOrderPrice(root: JsonObject): Long? {
             val rawCents = root["highest_buy_order"]?.jsonPrimitive?.contentOrNull
@@ -267,6 +331,12 @@ class CommunityMarketGateway(
         }
     }
 }
+
+private data class MarketHttpResult(
+    val body: String,
+    val rateLimited: Boolean,
+    val retryAfterMillis: Long?
+)
 
 fun estimateNetPrice(grossCents: Long, steamProfile: PlatformProfileEntity?): Long {
     if (grossCents <= 0) return 0

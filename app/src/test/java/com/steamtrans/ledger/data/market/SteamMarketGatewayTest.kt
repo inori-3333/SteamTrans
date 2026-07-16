@@ -126,6 +126,29 @@ class SteamMarketGatewayTest {
     }
 
     @Test
+    fun extractsItemNameIdFromActivityTickerFallback() {
+        val html = """
+            <script>
+                ItemActivityTicker.Start( 176024744 );
+            </script>
+        """.trimIndent()
+
+        assertEquals("176024744", CommunityMarketGateway.parseItemNameId(html))
+    }
+
+    @Test
+    fun recognizesSteamRateLimitPagesInsteadOfTreatingThemAsItemPages() {
+        val english = """
+            <h2>Sorry!</h2>
+            You've made too many requests recently. Please wait and try your request again later.
+        """.trimIndent()
+
+        assertEquals(true, CommunityMarketGateway.isRateLimitedResponse(english))
+        assertEquals(true, CommunityMarketGateway.isRateLimitedResponse("您最近的请求次数过多，请稍后重试。"))
+        assertEquals(false, CommunityMarketGateway.isRateLimitedResponse("Market_LoadOrderSpread( 176024744 );"))
+    }
+
+    @Test
     fun estimatedSteamNetUsesConfiguredRateAndFixedFee() {
         val profile = PlatformProfileEntity(
             name = "Steam",
