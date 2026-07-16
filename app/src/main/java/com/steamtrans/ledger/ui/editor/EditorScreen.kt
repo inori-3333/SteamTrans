@@ -6,6 +6,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,7 +64,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.steamtrans.ledger.BOOSTER_GEM_COSTS
 import com.steamtrans.ledger.ConversionRecipe
+import com.steamtrans.ledger.boosterGemCostFor
 import com.steamtrans.ledger.data.AccountType
 import com.steamtrans.ledger.data.DraftLine
 import com.steamtrans.ledger.data.EventDraft
@@ -78,6 +82,7 @@ import com.steamtrans.ledger.data.PlatformProfileEntity
 import com.steamtrans.ledger.data.TrackingMode
 import com.steamtrans.ledger.formatMoney
 import com.steamtrans.ledger.gemQuantityForBags
+import com.steamtrans.ledger.gemQuantityForBoosterPacks
 import com.steamtrans.ledger.parseMoney
 import com.steamtrans.ledger.ui.theme.AdjustAmber
 import com.steamtrans.ledger.ui.theme.BuyCoral
@@ -139,7 +144,7 @@ private val EditorLinesSaver = listSaver<SnapshotStateList<EditorLine>, Any>(
     }
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditorScreen(
     eventId: Long?,
@@ -188,6 +193,26 @@ fun EditorScreen(
                 if (type == EventType.CONVERT) add(EditorLine(1, 0, "1", ""))
             }
         }
+    }
+    var boosterGemCost by rememberSaveable(eventId, existing?.event?.updatedAt) {
+        mutableStateOf(
+            boosterGemCostFor(
+                lines.getOrNull(0)?.quantity.orEmpty(),
+                lines.getOrNull(1)?.quantity.orEmpty()
+            ) ?: 1_000L
+        )
+    }
+
+    fun isGemToBoosterConversion(): Boolean {
+        if (type != EventType.CONVERT || lines.size < 2) return false
+        val inputType = allItems.firstOrNull { it.id == lines[0].itemId }?.type
+        val outputType = if (newItem) newType else allItems.firstOrNull { it.id == lines[1].itemId }?.type
+        return inputType == ItemType.GEM && outputType == ItemType.BOOSTER
+    }
+
+    fun updateGemTotal(packQuantity: String = lines.getOrNull(1)?.quantity.orEmpty()) {
+        if (!isGemToBoosterConversion()) return
+        lines[0] = lines[0].copy(quantity = gemQuantityForBoosterPacks(boosterGemCost, packQuantity))
     }
 
     fun requestClose() { if (dirty) showDiscard = true else onClose() }
@@ -319,19 +344,20 @@ fun EditorScreen(
                         val bag = allItems.firstOrNull { it.type == ItemType.GEM_SACK }
                         val gem = allItems.firstOrNull { it.type == ItemType.GEM }
                         if (bag != null && gem != null) {
-                            lines.clear(); lines += EditorLine(System.nanoTime(), bag.id, "1"); lines += EditorLine(System.nanoTime(), gem.id, "1000"); dirty = true
+                            lines.clear(); lines += EditorLine(System.nanoTime(), bag.id, "1"); lines += EditorLine(System.nanoTime(), gem.id, "1000"); newItem = false; dirty = true
                         } else validationError = "请先创建宝石袋和宝石物品"
                     }) { Text("宝石袋 → 1000 宝石") }
                     OutlinedButton(onClick = {
                         val bag = allItems.firstOrNull { it.type == ItemType.GEM_SACK }
                         val gem = allItems.firstOrNull { it.type == ItemType.GEM }
                         if (bag != null && gem != null) {
-                            lines.clear(); lines += EditorLine(System.nanoTime(), gem.id, "1000"); lines += EditorLine(System.nanoTime(), bag.id, "1"); dirty = true
+                            lines.clear(); lines += EditorLine(System.nanoTime(), gem.id, "1000"); lines += EditorLine(System.nanoTime(), bag.id, "1"); newItem = false; dirty = true
                         } else validationError = "请先创建宝石袋和宝石物品"
                     }) { Text("1000 宝石 → 宝石袋") }
                     OutlinedButton(onClick = {
                         val gem = allItems.firstOrNull { it.type == ItemType.GEM }
                         if (gem != null) {
+                            boosterGemCost = 1_000L
                             lines.clear(); lines += EditorLine(System.nanoTime(), gem.id, "1000"); lines += EditorLine(System.nanoTime(), 0, "1"); newItem = true; newType = ItemType.BOOSTER; newTracking = TrackingMode.STACKABLE; dirty = true
                         } else validationError = "请先创建宝石物品"
                     }) { Text("宝石 → 新卡包") }
@@ -380,7 +406,11 @@ fun EditorScreen(
                 if (eventId == null && (type == EventType.BUY || type == EventType.CONVERT) && lines.size == 1 + if (type == EventType.CONVERT) 1 else 0) {
                     FilterChip(
                         selected = newItem,
-                        onClick = { newItem = !newItem; dirty = true },
+                        onClick = {
+                            newItem = !newItem
+                            updateGemTotal()
+                            dirty = true
+                        },
                         label = { Text(if (type == EventType.BUY) "买入新物品" else "产出新物品") },
                         leadingIcon = { Icon(Icons.Outlined.Inventory2, null, Modifier.size(18.dp)) }
                     )
@@ -398,7 +428,13 @@ fun EditorScreen(
                             typeMenu = newItemTypeMenu,
                             onOpenType = { newItemTypeMenu = true },
                             onCloseType = { newItemTypeMenu = false },
-                            onType = { newType = it; newTracking = it.defaultTracking; newItemTypeMenu = false; dirty = true }
+                            onType = {
+                                newType = it
+                                newTracking = it.defaultTracking
+                                newItemTypeMenu = false
+                                updateGemTotal()
+                                dirty = true
+                            }
                         )
                     }
                     TransactionLineEditor(
@@ -414,6 +450,7 @@ fun EditorScreen(
                         },
                         holding = holdings.firstOrNull { it.item.id == line.itemId },
                         canDelete = lines.size > if (type == EventType.CONVERT) 2 else 1,
+                        showQuantity = !isGemToBoosterConversion(),
                         onChange = { updated ->
                             lines[index] = updated
                             if (type == EventType.CONVERT && index == 0 && lines.size > 1) {
@@ -423,9 +460,26 @@ fun EditorScreen(
                                     lines[1] = lines[1].copy(quantity = gemQuantityForBags(updated.quantity))
                                 }
                             }
+                            if (isGemToBoosterConversion()) updateGemTotal(lines[1].quantity)
                             dirty = true
                         },
                         onDelete = { lines.removeAt(index); dirty = true }
+                    )
+                }
+                if (isGemToBoosterConversion()) {
+                    GemToBoosterControls(
+                        selectedGemCost = boosterGemCost,
+                        packQuantity = lines[1].quantity,
+                        onGemCostChange = { selected ->
+                            boosterGemCost = selected
+                            updateGemTotal()
+                            dirty = true
+                        },
+                        onPackQuantityChange = { quantity ->
+                            lines[1] = lines[1].copy(quantity = quantity)
+                            updateGemTotal(quantity)
+                            dirty = true
+                        }
                     )
                 }
                 if (type == EventType.BUY || type == EventType.SELL) {
@@ -550,6 +604,52 @@ private fun NewItemEditor(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GemToBoosterControls(
+    selectedGemCost: Long,
+    packQuantity: String,
+    onGemCostChange: (Long) -> Unit,
+    onPackQuantityChange: (String) -> Unit
+) {
+    val totalGems = gemQuantityForBoosterPacks(selectedGemCost, packQuantity)
+    Surface(color = RaisedBlue, shape = RoundedCornerShape(17.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("每个卡包所需宝石", style = MaterialTheme.typography.titleMedium)
+                Text("选择 Steam 卡包对应的宝石价格", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                BOOSTER_GEM_COSTS.forEach { cost ->
+                    FilterChip(
+                        selected = selectedGemCost == cost,
+                        onClick = { onGemCostChange(cost) },
+                        label = { Text(cost.toString()) }
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = packQuantity,
+                onValueChange = onPackQuantityChange,
+                label = { Text("转换卡包数量") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                isError = packQuantity.toLongOrNull()?.let { it > 0 } != true
+            )
+            Surface(color = ConvertPurple.copy(alpha = .10f), shape = RoundedCornerShape(12.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("消耗宝石总数", style = MaterialTheme.typography.bodyMedium, color = TextSecondary, modifier = Modifier.weight(1f))
+                    Text(totalGems.ifBlank { "—" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ConvertPurple)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun TransactionLineEditor(
     index: Int,
@@ -559,6 +659,7 @@ private fun TransactionLineEditor(
     candidates: List<ItemEntity>,
     holding: Holding?,
     canDelete: Boolean,
+    showQuantity: Boolean = true,
     onChange: (EditorLine) -> Unit,
     onDelete: () -> Unit
 ) {
@@ -587,30 +688,34 @@ private fun TransactionLineEditor(
                     }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    line.quantity,
-                    { value ->
-                        val updated = line.copy(quantity = value)
-                        onChange(if (type == EventType.CONVERT && index == 0 && item?.type == ItemType.GEM_SACK && value.toLongOrNull() != null) updated else updated)
-                    },
-                    label = { Text("数量") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.weight(.72f),
-                    isError = quantity == null || quantity <= 0
-                )
-                if (type != EventType.CONVERT) {
-                    OutlinedTextField(
-                        line.amount,
-                        { onChange(line.copy(amount = it)) },
-                        label = { Text(line.mode.label) },
-                        prefix = { Text("¥") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        modifier = Modifier.weight(1.28f),
-                        isError = perUnit == null || perUnit <= 0
-                    )
+            if (showQuantity || type != EventType.CONVERT) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (showQuantity) {
+                        OutlinedTextField(
+                            line.quantity,
+                            { value ->
+                                val updated = line.copy(quantity = value)
+                                onChange(if (type == EventType.CONVERT && index == 0 && item?.type == ItemType.GEM_SACK && value.toLongOrNull() != null) updated else updated)
+                            },
+                            label = { Text("数量") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(.72f),
+                            isError = quantity == null || quantity <= 0
+                        )
+                    }
+                    if (type != EventType.CONVERT) {
+                        OutlinedTextField(
+                            line.amount,
+                            { onChange(line.copy(amount = it)) },
+                            label = { Text(line.mode.label) },
+                            prefix = { Text("¥") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1.28f),
+                            isError = perUnit == null || perUnit <= 0
+                        )
+                    }
                 }
             }
             if (type != EventType.CONVERT) {
