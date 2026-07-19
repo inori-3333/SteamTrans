@@ -60,6 +60,45 @@ class ConversionPersistenceTest {
     }
 
     @Test
+    fun boosterConversionCreatesThreeDifferentCardsAtomically() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val db = LedgerDatabase.get(context)
+        db.clearAllTables()
+        val repository = LedgerRepository(db)
+        repository.addItemWithInitialBuy(
+            ItemEntity(name = "测试卡包", game = "测试游戏", type = ItemType.BOOSTER),
+            EventDraft(
+                type = EventType.BUY,
+                lines = listOf(DraftLine(0, LineDirection.IN, 1, 300))
+            )
+        )
+        val booster = repository.items.first().single()
+
+        repository.addItemsWithConversionOutputs(
+            listOf(
+                ItemEntity(name = "卡牌 A", game = "测试游戏", type = ItemType.CARD),
+                ItemEntity(name = "卡牌 B", game = "测试游戏", type = ItemType.CARD),
+                ItemEntity(name = "闪卡 C", game = "测试游戏", type = ItemType.FOIL_CARD)
+            ),
+            EventDraft(
+                type = EventType.CONVERT,
+                lines = listOf(
+                    DraftLine(booster.id, LineDirection.OUT, 1),
+                    DraftLine(0, LineDirection.IN, 1),
+                    DraftLine(0, LineDirection.IN, 1),
+                    DraftLine(0, LineDirection.IN, 1)
+                )
+            )
+        )
+
+        val snapshot = repository.snapshot.first()
+        assertNull(snapshot.error)
+        assertEquals(3, snapshot.holdings.size)
+        assertEquals(3, snapshot.holdings.sumOf { it.quantity })
+        assertEquals(300, snapshot.holdings.sumOf { it.costCents })
+    }
+
+    @Test
     fun oversellIsRejectedWithoutPersistingInvalidEvent() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val db = LedgerDatabase.get(context)

@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import com.steamtrans.ledger.BOOSTER_GEM_COSTS
 import com.steamtrans.ledger.ConversionRecipe
 import com.steamtrans.ledger.boosterGemCostFor
+import com.steamtrans.ledger.boosterGemCostForItem
 import com.steamtrans.ledger.data.AccountType
 import com.steamtrans.ledger.data.DraftLine
 import com.steamtrans.ledger.data.EventDraft
@@ -108,7 +109,19 @@ private data class EditorLine(
     val amount: String = "",
     val mode: AmountMode = AmountMode.UNIT,
     val selectedSourceLineId: Long? = null,
-    val selectedUnitOrdinal: Int? = null
+    val selectedUnitOrdinal: Int? = null,
+    val isNewItem: Boolean = false,
+    val newName: String = "",
+    val newGame: String = "",
+    val newType: ItemType = ItemType.OTHER
+)
+
+private fun newCardOutputLine(quantity: String = "1", game: String = "") = EditorLine(
+    key = System.nanoTime(),
+    quantity = quantity,
+    isNewItem = true,
+    newGame = game,
+    newType = ItemType.CARD
 )
 
 private val EditorLinesSaver = listSaver<SnapshotStateList<EditorLine>, Any>(
@@ -121,13 +134,17 @@ private val EditorLinesSaver = listSaver<SnapshotStateList<EditorLine>, Any>(
                 line.amount,
                 line.mode.name,
                 line.selectedSourceLineId ?: Long.MIN_VALUE,
-                line.selectedUnitOrdinal ?: Int.MIN_VALUE
+                line.selectedUnitOrdinal ?: Int.MIN_VALUE,
+                line.isNewItem,
+                line.newName,
+                line.newGame,
+                line.newType.name
             )
         }
     },
     restore = { values ->
         mutableStateListOf<EditorLine>().apply {
-            values.chunked(7).forEach { fields ->
+            values.chunked(11).forEach { fields ->
                 add(
                     EditorLine(
                         key = fields[0] as Long,
@@ -136,7 +153,11 @@ private val EditorLinesSaver = listSaver<SnapshotStateList<EditorLine>, Any>(
                         amount = fields[3] as String,
                         mode = AmountMode.valueOf(fields[4] as String),
                         selectedSourceLineId = (fields[5] as Long).takeUnless { it == Long.MIN_VALUE },
-                        selectedUnitOrdinal = (fields[6] as Int).takeUnless { it == Int.MIN_VALUE }
+                        selectedUnitOrdinal = (fields[6] as Int).takeUnless { it == Int.MIN_VALUE },
+                        isNewItem = fields[7] as Boolean,
+                        newName = fields[8] as String,
+                        newGame = fields[9] as String,
+                        newType = ItemType.valueOf(fields[10] as String)
                     )
                 )
             }
@@ -159,7 +180,7 @@ fun EditorScreen(
     onSave: (EventDraft) -> Unit,
     onUpdate: (Long, EventDraft) -> Unit,
     onCreateAndBuy: (ItemEntity, EventDraft) -> Unit,
-    onCreateConversionOutput: (ItemEntity, EventDraft) -> Unit,
+    onCreateConversionOutputs: (List<ItemEntity>, EventDraft) -> Unit,
     onSaveRecipe: (ConversionRecipe) -> Unit
 ) {
     val existing = events.firstOrNull { it.event.id == eventId }
@@ -171,12 +192,6 @@ fun EditorScreen(
     var note by rememberSaveable(eventId) { mutableStateOf(existing?.event?.note.orEmpty()) }
     var dirty by rememberSaveable(eventId) { mutableStateOf(false) }
     var showDiscard by remember { mutableStateOf(false) }
-    var newItem by rememberSaveable(eventId) { mutableStateOf(false) }
-    var newName by rememberSaveable(eventId) { mutableStateOf("") }
-    var newGame by rememberSaveable(eventId) { mutableStateOf("") }
-    var newType by rememberSaveable(eventId) { mutableStateOf(ItemType.OTHER) }
-    var newTracking by rememberSaveable(eventId) { mutableStateOf(TrackingMode.STACKABLE) }
-    var newItemTypeMenu by remember { mutableStateOf(false) }
     var platformMenu by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var showRecipeDialog by remember { mutableStateOf(false) }
@@ -189,8 +204,16 @@ fun EditorScreen(
                     add(EditorLine(index.toLong(), line.itemId, line.quantity.toString(), centsInput(line.unitPriceCents), AmountMode.UNIT, allocation?.sourceLineId, allocation?.unitOrdinal))
                 }
             } else if (type != EventType.ACCOUNT_ADJUSTMENT) {
-                add(EditorLine(0, holdings.firstOrNull()?.item?.id ?: allItems.firstOrNull()?.id ?: 0))
-                if (type == EventType.CONVERT) add(EditorLine(1, 0, "1", ""))
+                val inputId = holdings.firstOrNull()?.item?.id ?: allItems.firstOrNull()?.id ?: 0
+                add(EditorLine(0, inputId))
+                if (type == EventType.CONVERT) {
+                    val inputItem = allItems.firstOrNull { it.id == inputId }
+                    if (inputItem?.type == ItemType.BOOSTER) {
+                        repeat(3) { add(newCardOutputLine(game = inputItem.game)) }
+                    } else {
+                        add(EditorLine(1, 0, "1", ""))
+                    }
+                }
             }
         }
     }
@@ -206,13 +229,71 @@ fun EditorScreen(
     fun isGemToBoosterConversion(): Boolean {
         if (type != EventType.CONVERT || lines.size < 2) return false
         val inputType = allItems.firstOrNull { it.id == lines[0].itemId }?.type
-        val outputType = if (newItem) newType else allItems.firstOrNull { it.id == lines[1].itemId }?.type
+        val output = lines[1]
+        val outputType = if (output.isNewItem) output.newType else allItems.firstOrNull { it.id == output.itemId }?.type
         return inputType == ItemType.GEM && outputType == ItemType.BOOSTER
+    }
+
+    fun isBoosterToCardsConversion(): Boolean =
+        type == EventType.CONVERT && lines.isNotEmpty() &&
+            allItems.firstOrNull { it.id == lines[0].itemId }?.type == ItemType.BOOSTER
+
+    fun setConversionInput(itemId: Long) {
+        val wasBooster = isBoosterToCardsConversion()
+        lines[0] = lines[0].copy(itemId = itemId, selectedSourceLineId = null, selectedUnitOrdinal = null)
+        val inputItem = allItems.firstOrNull { it.id == itemId }
+        val isBooster = inputItem?.type == ItemType.BOOSTER
+        if (isBooster && !wasBooster) {
+            while (lines.size > 1) lines.removeAt(lines.lastIndex)
+            repeat(3) { lines += newCardOutputLine(game = inputItem.game) }
+        } else if (!isBooster && wasBooster) {
+            while (lines.size > 1) lines.removeAt(lines.lastIndex)
+            lines += EditorLine(System.nanoTime())
+        }
+    }
+
+    fun reconcileBoosterCardSlots(changedLineIndex: Int) {
+        if (!isBoosterToCardsConversion()) return
+        val packQuantity = lines.first().quantity.toLongOrNull()?.takeIf { it > 0 } ?: return
+        val required = runCatching { Math.multiplyExact(packQuantity, 3L) }.getOrNull() ?: return
+        val prefixEnd = changedLineIndex.coerceIn(0, lines.lastIndex)
+        val prefix = lines.subList(1, prefixEnd + 1).toList()
+        val prefixQuantity = prefix.sumOf { it.quantity.toLongOrNull()?.takeIf { value -> value > 0 } ?: 0L }
+        if (prefixQuantity > required) return
+
+        var remaining = required - prefixQuantity
+        val trailing = mutableListOf<EditorLine>()
+        lines.drop(prefixEnd + 1).forEach { candidate ->
+            if (remaining <= 0) return@forEach
+            val quantity = candidate.quantity.toLongOrNull()?.takeIf { it > 0 } ?: 1L
+            val keptQuantity = minOf(quantity, remaining)
+            trailing += candidate.copy(quantity = keptQuantity.toString())
+            remaining -= keptQuantity
+        }
+        while (remaining > 0) {
+            val quantity = if (trailing.size + prefix.size >= 60) remaining else 1L
+            val game = allItems.firstOrNull { it.id == lines.first().itemId }?.game.orEmpty()
+            trailing += newCardOutputLine(quantity.toString(), game)
+            remaining -= quantity
+        }
+        while (lines.size > 1) lines.removeAt(lines.lastIndex)
+        lines.addAll(prefix + trailing)
     }
 
     fun updateGemTotal(packQuantity: String = lines.getOrNull(1)?.quantity.orEmpty()) {
         if (!isGemToBoosterConversion()) return
         lines[0] = lines[0].copy(quantity = gemQuantityForBoosterPacks(boosterGemCost, packQuantity))
+    }
+
+    fun restoreBoosterGemCost(boosterItemId: Long) {
+        val knownCost = boosterGemCostForItem(
+            boosterItemId = boosterItemId,
+            gemItemIds = allItems.filter { it.type == ItemType.GEM }.mapTo(mutableSetOf()) { it.id },
+            events = events,
+            recipes = recipes
+        ) ?: return
+        boosterGemCost = knownCost
+        updateGemTotal()
     }
 
     fun requestClose() { if (dirty) showDiscard = true else onClose() }
@@ -265,8 +346,12 @@ fun EditorScreen(
                                 runCatching {
                                     when {
                                         eventId != null -> onUpdate(eventId, draft)
-                                        newItem && type == EventType.BUY -> onCreateAndBuy(newItemEntity(newName, newGame, newType, newTracking), draft.copy(lines = listOf(draft.lines.single().copy(itemId = 0))))
-                                        newItem && type == EventType.CONVERT -> onCreateConversionOutput(newItemEntity(newName, newGame, newType, newTracking), draft)
+                                        type == EventType.BUY && lines.single().isNewItem -> {
+                                            onCreateAndBuy(newItemEntity(lines.single()), draft.copy(lines = listOf(draft.lines.single().copy(itemId = 0))))
+                                        }
+                                        type == EventType.CONVERT && lines.drop(1).any { it.isNewItem } -> {
+                                            onCreateConversionOutputs(lines.drop(1).filter { it.isNewItem }.map(::newItemEntity), draft)
+                                        }
                                         else -> onSave(draft)
                                     }
                                 }.onFailure { validationError = it.message ?: "请检查输入" }
@@ -294,9 +379,24 @@ fun EditorScreen(
                                 type = choice; dirty = true; validationError = null
                                 if (choice == EventType.ACCOUNT_ADJUSTMENT) lines.clear()
                                 else if (lines.isEmpty()) lines += EditorLine(System.nanoTime(), holdings.firstOrNull()?.item?.id ?: allItems.firstOrNull()?.id ?: 0)
-                                if (choice == EventType.CONVERT && lines.size == 1) lines += EditorLine(System.nanoTime())
+                                if (choice == EventType.SELL || choice == EventType.CONVERT) {
+                                    val currentInput = lines.firstOrNull()
+                                    if (currentInput != null && (currentInput.isNewItem || currentInput.itemId == 0L)) {
+                                        lines[0] = currentInput.copy(
+                                            itemId = holdings.firstOrNull()?.item?.id ?: 0L,
+                                            isNewItem = false
+                                        )
+                                    }
+                                }
+                                if (choice == EventType.CONVERT && lines.size == 1) {
+                                    if (allItems.firstOrNull { it.id == lines[0].itemId }?.type == ItemType.BOOSTER) {
+                                        val game = allItems.firstOrNull { it.id == lines[0].itemId }?.game.orEmpty()
+                                        repeat(3) { lines += newCardOutputLine(game = game) }
+                                    } else {
+                                        lines += EditorLine(System.nanoTime())
+                                    }
+                                }
                                 if (choice != EventType.CONVERT && lines.size > 1) while (lines.size > 1) lines.removeAt(lines.lastIndex)
-                                newItem = false
                             },
                             label = { Text(choice.label) }
                         )
@@ -344,21 +444,24 @@ fun EditorScreen(
                         val bag = allItems.firstOrNull { it.type == ItemType.GEM_SACK }
                         val gem = allItems.firstOrNull { it.type == ItemType.GEM }
                         if (bag != null && gem != null) {
-                            lines.clear(); lines += EditorLine(System.nanoTime(), bag.id, "1"); lines += EditorLine(System.nanoTime(), gem.id, "1000"); newItem = false; dirty = true
+                            lines.clear(); lines += EditorLine(System.nanoTime(), bag.id, "1"); lines += EditorLine(System.nanoTime(), gem.id, "1000"); dirty = true
                         } else validationError = "请先创建宝石袋和宝石物品"
                     }) { Text("宝石袋 → 1000 宝石") }
                     OutlinedButton(onClick = {
                         val bag = allItems.firstOrNull { it.type == ItemType.GEM_SACK }
                         val gem = allItems.firstOrNull { it.type == ItemType.GEM }
                         if (bag != null && gem != null) {
-                            lines.clear(); lines += EditorLine(System.nanoTime(), gem.id, "1000"); lines += EditorLine(System.nanoTime(), bag.id, "1"); newItem = false; dirty = true
+                            lines.clear(); lines += EditorLine(System.nanoTime(), gem.id, "1000"); lines += EditorLine(System.nanoTime(), bag.id, "1"); dirty = true
                         } else validationError = "请先创建宝石袋和宝石物品"
                     }) { Text("1000 宝石 → 宝石袋") }
                     OutlinedButton(onClick = {
                         val gem = allItems.firstOrNull { it.type == ItemType.GEM }
                         if (gem != null) {
                             boosterGemCost = 1_000L
-                            lines.clear(); lines += EditorLine(System.nanoTime(), gem.id, "1000"); lines += EditorLine(System.nanoTime(), 0, "1"); newItem = true; newType = ItemType.BOOSTER; newTracking = TrackingMode.STACKABLE; dirty = true
+                            lines.clear()
+                            lines += EditorLine(System.nanoTime(), gem.id, "1000")
+                            lines += EditorLine(System.nanoTime(), isNewItem = true, newType = ItemType.BOOSTER)
+                            dirty = true
                         } else validationError = "请先创建宝石物品"
                     }) { Text("宝石 → 新卡包") }
                     recipes.forEach { recipe ->
@@ -366,7 +469,6 @@ fun EditorScreen(
                             lines.clear()
                             lines += EditorLine(System.nanoTime(), recipe.inputItemId, recipe.inputQuantity.toString())
                             lines += EditorLine(System.nanoTime(), recipe.outputItemId, recipe.outputQuantity.toString())
-                            newItem = false
                             dirty = true
                         }) { Text(recipe.name, maxLines = 1) }
                     }
@@ -375,7 +477,9 @@ fun EditorScreen(
                         val output = lines.getOrNull(1)
                         val inputItem = input?.let { line -> allItems.firstOrNull { it.id == line.itemId } }
                         val outputItem = output?.let { line -> allItems.firstOrNull { it.id == line.itemId } }
-                        if (input == null || output == null || inputItem == null || outputItem == null ||
+                        if (lines.size != 2) {
+                            validationError = "多产出转换暂不支持保存为快捷配方"
+                        } else if (input == null || output == null || inputItem == null || outputItem == null ||
                             input.quantity.toLongOrNull()?.let { it > 0 } != true || output.quantity.toLongOrNull()?.let { it > 0 } != true
                         ) {
                             validationError = "请先选择有效的转入、转出物品与数量"
@@ -403,35 +507,62 @@ fun EditorScreen(
                 )
             } else {
                 SectionLabel(if (type == EventType.CONVERT) "物品与数量" else "成交物品")
-                if (eventId == null && (type == EventType.BUY || type == EventType.CONVERT) && lines.size == 1 + if (type == EventType.CONVERT) 1 else 0) {
-                    FilterChip(
-                        selected = newItem,
-                        onClick = {
-                            newItem = !newItem
-                            updateGemTotal()
-                            dirty = true
-                        },
-                        label = { Text(if (type == EventType.BUY) "买入新物品" else "产出新物品") },
-                        leadingIcon = { Icon(Icons.Outlined.Inventory2, null, Modifier.size(18.dp)) }
-                    )
+                if (isBoosterToCardsConversion()) {
+                    Surface(color = ConvertPurple.copy(alpha = .10f), shape = RoundedCornerShape(14.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("每个卡包固定产出 3 张卡牌", style = MaterialTheme.typography.titleMedium, color = ConvertPurple)
+                            Text("默认按普通卡录入；某一槽数量改为 2 或 3 后，后续槽位会自动合并。闪卡可在对应槽中手动切换。", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+                    }
                 }
                 lines.forEachIndexed { index, line ->
-                    val isNewLine = newItem && ((type == EventType.BUY && index == 0) || (type == EventType.CONVERT && index == lines.lastIndex))
+                    val isNewLine = line.isNewItem
+                    val canCreateItem = eventId == null && (type == EventType.BUY || type == EventType.CONVERT && index > 0)
+                    val boosterOutput = isBoosterToCardsConversion() && index > 0
+                    val candidates = when (type) {
+                        EventType.BUY -> allItems
+                        EventType.SELL -> holdings.map { it.item }
+                        EventType.CONVERT -> if (index == 0) {
+                            holdings.map { it.item }
+                        } else if (boosterOutput) {
+                            val game = allItems.firstOrNull { it.id == lines.first().itemId }?.game.orEmpty()
+                            allItems.filter {
+                                (it.type == ItemType.CARD || it.type == ItemType.FOIL_CARD) &&
+                                    (game.isBlank() || it.game.equals(game, ignoreCase = true))
+                            }
+                        } else {
+                            allItems
+                        }
+                        EventType.ACCOUNT_ADJUSTMENT -> emptyList()
+                    }
+                    if (canCreateItem) {
+                        FilterChip(
+                            selected = isNewLine,
+                            onClick = {
+                                lines[index] = if (isNewLine) {
+                                    line.copy(isNewItem = false, itemId = candidates.firstOrNull()?.id ?: 0)
+                                } else {
+                                    line.copy(isNewItem = true, itemId = 0, newType = if (boosterOutput) ItemType.CARD else line.newType)
+                                }
+                                updateGemTotal()
+                                dirty = true
+                            },
+                            label = { Text(if (isNewLine) if (boosterOutput) "新增卡牌" else "新增物品" else "选择已有物品") },
+                            leadingIcon = { Icon(Icons.Outlined.Inventory2, null, Modifier.size(18.dp)) }
+                        )
+                    }
                     if (isNewLine) {
                         NewItemEditor(
-                            name = newName,
-                            onName = { newName = it; dirty = true },
-                            game = newGame,
-                            onGame = { newGame = it; dirty = true },
-                            type = newType,
-                            tracking = newTracking,
-                            typeMenu = newItemTypeMenu,
-                            onOpenType = { newItemTypeMenu = true },
-                            onCloseType = { newItemTypeMenu = false },
+                            lineKey = line.key,
+                            title = if (boosterOutput) "新卡牌定义" else "新物品定义",
+                            name = line.newName,
+                            onName = { lines[index] = lines[index].copy(newName = it); dirty = true },
+                            game = line.newGame,
+                            onGame = { lines[index] = lines[index].copy(newGame = it); dirty = true },
+                            type = line.newType,
+                            allowedTypes = if (boosterOutput) listOf(ItemType.CARD, ItemType.FOIL_CARD) else ItemType.entries,
                             onType = {
-                                newType = it
-                                newTracking = it.defaultTracking
-                                newItemTypeMenu = false
+                                lines[index] = lines[index].copy(newType = it)
                                 updateGemTotal()
                                 dirty = true
                             }
@@ -442,17 +573,18 @@ fun EditorScreen(
                         type = type,
                         line = line,
                         isNewItem = isNewLine,
-                        candidates = when (type) {
-                            EventType.BUY -> allItems
-                            EventType.SELL -> holdings.map { it.item }
-                            EventType.CONVERT -> if (index == 0) holdings.map { it.item } else allItems
-                            EventType.ACCOUNT_ADJUSTMENT -> emptyList()
-                        },
+                        candidates = candidates,
                         holding = holdings.firstOrNull { it.item.id == line.itemId },
-                        canDelete = lines.size > if (type == EventType.CONVERT) 2 else 1,
+                        canDelete = !boosterOutput && lines.size > if (type == EventType.CONVERT) 2 else 1,
                         showQuantity = !isGemToBoosterConversion(),
                         onChange = { updated ->
-                            lines[index] = updated
+                            val itemChanged = updated.itemId != line.itemId
+                            if (type == EventType.CONVERT && index == 0 && itemChanged) {
+                                setConversionInput(updated.itemId)
+                                lines[0] = lines[0].copy(quantity = updated.quantity)
+                            } else {
+                                lines[index] = updated
+                            }
                             if (type == EventType.CONVERT && index == 0 && lines.size > 1) {
                                 val input = allItems.firstOrNull { it.id == updated.itemId }
                                 val output = allItems.firstOrNull { it.id == lines[1].itemId }
@@ -460,6 +592,10 @@ fun EditorScreen(
                                     lines[1] = lines[1].copy(quantity = gemQuantityForBags(updated.quantity))
                                 }
                             }
+                            if (itemChanged && isGemToBoosterConversion()) {
+                                restoreBoosterGemCost(lines[1].itemId)
+                            }
+                            if (isBoosterToCardsConversion()) reconcileBoosterCardSlots(index)
                             if (isGemToBoosterConversion()) updateGemTotal(lines[1].quantity)
                             dirty = true
                         },
@@ -483,7 +619,7 @@ fun EditorScreen(
                     )
                 }
                 if (type == EventType.BUY || type == EventType.SELL) {
-                    OutlinedButton(onClick = { lines += EditorLine(System.nanoTime(), if (type == EventType.SELL) holdings.firstOrNull()?.item?.id ?: 0 else allItems.firstOrNull()?.id ?: 0); dirty = true }, enabled = !newItem, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { lines += EditorLine(System.nanoTime(), if (type == EventType.SELL) holdings.firstOrNull()?.item?.id ?: 0 else allItems.firstOrNull()?.id ?: 0); dirty = true }, enabled = lines.none { it.isNewItem }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(7.dp)); Text("追加物品行")
                     }
                 }
@@ -576,29 +712,33 @@ private fun SectionLabel(text: String) { Text(text, style = MaterialTheme.typogr
 
 @Composable
 private fun NewItemEditor(
+    lineKey: Long,
+    title: String,
     name: String,
     onName: (String) -> Unit,
     game: String,
     onGame: (String) -> Unit,
     type: ItemType,
-    tracking: TrackingMode,
-    typeMenu: Boolean,
-    onOpenType: () -> Unit,
-    onCloseType: () -> Unit,
+    allowedTypes: List<ItemType>,
     onType: (ItemType) -> Unit
 ) {
+    var typeMenu by remember(lineKey) { mutableStateOf(false) }
     Surface(color = RaisedBlue, shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("新物品定义", style = MaterialTheme.typography.titleMedium)
+            Text(title, style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(name, onName, label = { Text("物品名称") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(game, onGame, label = { Text("游戏（可选）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             Box {
-                OutlinedButton(onOpenType, modifier = Modifier.fillMaxWidth()) { Text(type.label) }
-                DropdownMenu(typeMenu, onCloseType) { ItemType.entries.forEach { choice -> DropdownMenuItem({ Text(choice.label) }, onClick = { onType(choice) }) } }
+                OutlinedButton({ typeMenu = true }, modifier = Modifier.fillMaxWidth()) { Text(type.label) }
+                DropdownMenu(typeMenu, { typeMenu = false }) {
+                    allowedTypes.forEach { choice ->
+                        DropdownMenuItem({ Text(choice.label) }, onClick = { onType(choice); typeMenu = false })
+                    }
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Lock, null, Modifier.size(17.dp), tint = TextSecondary); Spacer(Modifier.width(6.dp))
-                Text("默认${tracking.label}追踪，保存后可在持仓中修改定义。", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Text("默认${type.defaultTracking.label}追踪，保存后可在持仓中修改定义。", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             }
         }
     }
@@ -770,7 +910,25 @@ private fun buildDraft(
         return@runCatching EventDraft(type, timestamp, platform.ifBlank { account.label }, 0, note, emptyList(), account, delta)
     }
     require(lines.isNotEmpty()) { "至少添加一个物品" }
-    if (type == EventType.CONVERT) require(lines.size == 2) { "当前版本的转换必须单进单出" }
+    if (type == EventType.CONVERT) {
+        require(lines.size >= 2) { "转换必须至少包含一个转出物和一个产出物" }
+        val inputItem = allItems.firstOrNull { it.id == lines.first().itemId }
+        if (inputItem?.type == ItemType.BOOSTER) {
+            val packQuantity = lines.first().quantity.toLongOrNull() ?: error("卡包数量无效")
+            val expectedCards = runCatching { Math.multiplyExact(packQuantity, 3L) }.getOrNull()
+                ?: error("卡包数量过大")
+            val actualCards = runCatching {
+                lines.drop(1).fold(0L) { total, line ->
+                    Math.addExact(total, line.quantity.toLongOrNull() ?: error("卡牌数量无效"))
+                }
+            }.getOrNull() ?: error("卡牌数量过大")
+            require(actualCards == expectedCards) { "每个卡包必须产出 3 张卡牌；当前应填写 $expectedCards 张" }
+            require(lines.drop(1).all { line ->
+                val outputType = if (line.isNewItem) line.newType else allItems.firstOrNull { it.id == line.itemId }?.type
+                outputType == ItemType.CARD || outputType == ItemType.FOIL_CARD
+            }) { "卡包只能产出普通卡或闪卡" }
+        }
+    }
     val draftLines = lines.mapIndexed { index, line ->
         val quantity = line.quantity.toLongOrNull() ?: error("第 ${index + 1} 行数量无效")
         require(quantity > 0) { "数量必须大于 0" }
@@ -782,7 +940,7 @@ private fun buildDraft(
             EventType.CONVERT -> if (index == 0) LineDirection.OUT else LineDirection.IN
             EventType.ACCOUNT_ADJUSTMENT -> error("无物品行")
         }
-        DraftLine(line.itemId, direction, quantity, price)
+        DraftLine(if (line.isNewItem) 0 else line.itemId, direction, quantity, price)
     }
     val fee = if (type == EventType.CONVERT) 0 else parseMoney(feeText.ifBlank { "0" }) ?: error("手续费无效")
     require(fee >= 0) { "手续费不能为负数" }
@@ -795,9 +953,15 @@ private fun buildDraft(
     EventDraft(type, timestamp, platform, fee, note, draftLines, account, allocations = allocations)
 }
 
-private fun newItemEntity(name: String, game: String, type: ItemType, tracking: TrackingMode): ItemEntity {
-    require(name.trim().isNotBlank()) { "新物品名称不能为空" }
-    return ItemEntity(name = name.trim(), game = game.trim(), type = type, trackingMode = tracking, trackingReviewed = true)
+private fun newItemEntity(line: EditorLine): ItemEntity {
+    require(line.newName.trim().isNotBlank()) { "新物品名称不能为空" }
+    return ItemEntity(
+        name = line.newName.trim(),
+        game = line.newGame.trim(),
+        type = line.newType,
+        trackingMode = line.newType.defaultTracking,
+        trackingReviewed = true
+    )
 }
 
 private fun unitPrice(line: EditorLine): Long? {

@@ -116,6 +116,34 @@ class LedgerV2CalculatorTest {
         assertEquals(CostVector(fiatCents = 100), result.holdings.single().cost)
     }
 
+    @Test fun `booster conversion distributes cost across three card outputs`() {
+        val booster = stack.copy(name = "测试卡包", type = ItemType.BOOSTER)
+        val firstCard = stack.copy(id = 2, name = "卡牌 A", type = ItemType.CARD)
+        val secondCard = stack.copy(id = 3, name = "卡牌 B", type = ItemType.CARD)
+        val foilCard = stack.copy(id = 4, name = "闪卡 C", type = ItemType.FOIL_CARD)
+        val result = LedgerCalculator.calculate(
+            listOf(booster, firstCard, secondCard, foilCard),
+            listOf(
+                event(1, EventType.BUY, AccountType.STEAM_WALLET_CNY, EventLineEntity(11, 1, booster.id, LineDirection.IN, 1, 300)),
+                EventView(
+                    LedgerEventEntity(2, EventType.CONVERT, 2, accountType = AccountType.STEAM_WALLET_CNY, legacy = false),
+                    listOf(
+                        EventLineEntity(12, 2, booster.id, LineDirection.OUT, 1),
+                        EventLineEntity(13, 2, firstCard.id, LineDirection.IN, 1),
+                        EventLineEntity(14, 2, secondCard.id, LineDirection.IN, 1),
+                        EventLineEntity(15, 2, foilCard.id, LineDirection.IN, 1)
+                    )
+                )
+            )
+        )
+
+        assertNull(result.error)
+        assertEquals(3, result.holdings.size)
+        assertEquals(100, result.holdings.first { it.item.id == firstCard.id }.costCents)
+        assertEquals(100, result.holdings.first { it.item.id == secondCard.id }.costCents)
+        assertEquals(100, result.holdings.first { it.item.id == foilCard.id }.costCents)
+    }
+
     @Test fun `voided event is retained but excluded`() {
         val result = LedgerCalculator.calculate(
             listOf(stack),

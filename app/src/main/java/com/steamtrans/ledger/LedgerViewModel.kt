@@ -133,6 +133,9 @@ class LedgerViewModel(application: Application) : AndroidViewModel(application) 
     fun addItemWithConversionOutput(item: ItemEntity, draft: EventDraft, done: () -> Unit = {}) =
         launchOperation("转换保存失败", done) { commandService.addItemWithConversionOutput(item, draft) }
 
+    fun addItemsWithConversionOutputs(items: List<ItemEntity>, draft: EventDraft, done: () -> Unit = {}) =
+        launchOperation("转换保存失败", done) { commandService.addItemsWithConversionOutputs(items, draft) }
+
     fun setEventVoided(id: Long, voided: Boolean) =
         launchOperation(if (voided) "作废失败" else "恢复失败") {
             if (voided) commandService.void(id) else commandService.restore(id)

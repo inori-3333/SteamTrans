@@ -154,23 +154,31 @@ class LedgerRepository(private val db: LedgerDatabase) {
         recordPortfolioSnapshot("buy")
     }
 
-    suspend fun addItemWithConversionOutput(item: ItemEntity, draft: EventDraft) = db.withTransaction {
-        val outputs = draft.lines.filter { it.direction == LineDirection.OUT }
-        val unresolvedInputs = draft.lines.filter { it.direction == LineDirection.IN && it.itemId == 0L }
-        require(draft.type == EventType.CONVERT && outputs.size == 1 && unresolvedInputs.size == 1 && draft.lines.size == 2) {
-            "转换必须包含一个转出物和一个产出物"
+    suspend fun addItemWithConversionOutput(item: ItemEntity, draft: EventDraft) =
+        addItemsWithConversionOutputs(listOf(item), draft)
+
+    suspend fun addItemsWithConversionOutputs(items: List<ItemEntity>, draft: EventDraft) = db.withTransaction {
+        val outgoing = draft.lines.filter { it.direction == LineDirection.OUT }
+        val unresolvedOutputs = draft.lines.filter { it.direction == LineDirection.IN && it.itemId == 0L }
+        require(draft.type == EventType.CONVERT && outgoing.isNotEmpty() && unresolvedOutputs.size == items.size && items.isNotEmpty()) {
+            "转换中的新产出物定义不完整"
         }
-        val normalized = normalizeItem(item).copy(
-            trackingReviewed = true,
-            createdAt = item.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis()
-        )
-        val itemId = dao.findItem(normalized.name, normalized.game, normalized.type)?.id
-            ?: dao.insertItem(normalized)
+        val now = System.currentTimeMillis()
+        val itemIds = items.map { item ->
+            val normalized = normalizeItem(item).copy(
+                trackingReviewed = true,
+                createdAt = item.createdAt.takeIf { it > 0 } ?: now,
+                updatedAt = now
+            )
+            dao.findItem(normalized.name, normalized.game, normalized.type)?.id ?: dao.insertItem(normalized)
+        }.iterator()
         val resolved = draft.copy(
             feeCents = 0,
-            lines = draft.lines.map { line -> if (line.itemId == 0L) line.copy(itemId = itemId) else line }
+            lines = draft.lines.map { line ->
+                if (line.direction == LineDirection.IN && line.itemId == 0L) line.copy(itemId = itemIds.next()) else line
+            }
         )
+        require(!itemIds.hasNext()) { "存在未使用的新产出物定义" }
         validateAndInsert(resolved)
         recordPortfolioSnapshot("convert")
     }
@@ -422,7 +430,8 @@ class LedgerRepository(private val db: LedgerDatabase) {
         require(draft.lines.all { it.itemId > 0 && it.quantity > 0 && it.unitPriceCents >= 0 }) {
             "物品、数量或金额无效"
         }
-        val itemIds = dao.getItems().mapTo(hashSetOf()) { it.id }
+        val items = dao.getItems()
+        val itemIds = items.mapTo(hashSetOf()) { it.id }
         require(draft.lines.all { it.itemId in itemIds }) { "流水包含不存在的物品" }
         val gross = try {
             draft.lines.fold(0L) { total, line ->
@@ -445,6 +454,28 @@ class LedgerRepository(private val db: LedgerDatabase) {
                 require(draft.feeCents == 0L && draft.lines.all { it.unitPriceCents == 0L }) { "转换不能包含金额或手续费" }
                 require(draft.lines.any { it.direction == LineDirection.OUT } && draft.lines.any { it.direction == LineDirection.IN }) {
                     "转换必须同时包含转出物和产出物"
+                }
+                val itemTypes = items.associate { it.id to it.type }
+                val outgoing = draft.lines.filter { it.direction == LineDirection.OUT }
+                if (outgoing.any { itemTypes[it.itemId] == ItemType.BOOSTER }) {
+                    require(outgoing.size == 1 && itemTypes[outgoing.single().itemId] == ItemType.BOOSTER) {
+                        "卡包拆包转换只能包含一个卡包转出项"
+                    }
+                    val expectedCards = try {
+                        Math.multiplyExact(outgoing.single().quantity, 3L)
+                    } catch (_: ArithmeticException) {
+                        throw IllegalArgumentException("卡包数量过大")
+                    }
+                    val incoming = draft.lines.filter { it.direction == LineDirection.IN }
+                    require(incoming.all { itemTypes[it.itemId] == ItemType.CARD || itemTypes[it.itemId] == ItemType.FOIL_CARD }) {
+                        "卡包只能产出普通卡或闪卡"
+                    }
+                    val actualCards = try {
+                        incoming.fold(0L) { total, line -> Math.addExact(total, line.quantity) }
+                    } catch (_: ArithmeticException) {
+                        throw IllegalArgumentException("卡牌数量过大")
+                    }
+                    require(actualCards == expectedCards) { "每个卡包必须产出 3 张卡牌" }
                 }
             }
             EventType.ACCOUNT_ADJUSTMENT -> Unit

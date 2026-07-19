@@ -18,6 +18,7 @@ interface LedgerCommandService {
     suspend fun adjustAccount(account: AccountType, targetBalanceCents: Long, note: String)
     suspend fun addItemWithInitialBuy(item: ItemEntity, draft: EventDraft)
     suspend fun addItemWithConversionOutput(item: ItemEntity, draft: EventDraft)
+    suspend fun addItemsWithConversionOutputs(items: List<ItemEntity>, draft: EventDraft)
     suspend fun completeLegacyMigration(
         platformAccounts: Map<String, AccountType>,
         walletBalanceCents: Long,
@@ -59,6 +60,10 @@ class RoomLedgerCommandService(
 
     override suspend fun addItemWithConversionOutput(item: ItemEntity, draft: EventDraft) {
         repository.addItemWithConversionOutput(item, draft)
+    }
+
+    override suspend fun addItemsWithConversionOutputs(items: List<ItemEntity>, draft: EventDraft) {
+        repository.addItemsWithConversionOutputs(items, draft)
     }
 
     override suspend fun completeLegacyMigration(

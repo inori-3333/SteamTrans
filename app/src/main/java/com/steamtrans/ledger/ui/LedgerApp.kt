@@ -204,7 +204,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
                     onSave = { draft -> vm.addEvent(draft) { navController.popBackStack() } },
                     onUpdate = { eventId, draft -> vm.updateEvent(eventId, draft) { navController.popBackStack() } },
                     onCreateAndBuy = { item, draft -> vm.addItemWithInitialBuy(item, draft) { navController.popBackStack() } },
-                    onCreateConversionOutput = { item, draft -> vm.addItemWithConversionOutput(item, draft) { navController.popBackStack() } },
+                    onCreateConversionOutputs = { items, draft -> vm.addItemsWithConversionOutputs(items, draft) { navController.popBackStack() } },
                     onSaveRecipe = vm::saveConversionRecipe
                 )
             }
